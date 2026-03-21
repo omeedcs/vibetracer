@@ -1,2 +1,7 @@
 .vibetracer/
 .superpowers/
+
+
+# Added by cargo
+
+/target
