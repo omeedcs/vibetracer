@@ -8,14 +8,6 @@ use ratatui::{
 
 use crate::tui::App;
 
-const COLOR_HEADER: Color = Color::Rgb(138, 143, 152);
-const COLOR_HEADER_VALUE: Color = Color::Rgb(160, 168, 183);
-const COLOR_INTENT: Color = Color::Rgb(188, 160, 100);
-const COLOR_ADD: Color = Color::Rgb(90, 158, 111);
-const COLOR_REMOVE: Color = Color::Rgb(158, 90, 90);
-const COLOR_HUNK: Color = Color::Rgb(90, 122, 158);
-const COLOR_EMPTY: Color = Color::Rgb(90, 101, 119);
-
 /// Render a single line at (area.x, y) if y < area.y + area.height.
 fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
     if y >= area.y + area.height {
@@ -52,10 +44,18 @@ impl Widget for PreviewPane<'_> {
         let edit = match self.app.current_edit() {
             Some(e) => e,
             None => {
-                render_empty_state(area, buf);
+                render_empty_state(area, buf, &self.app.theme);
                 return;
             }
         };
+
+        let t = &self.app.theme;
+        let color_header: Color = t.fg_muted;
+        let color_header_value: Color = t.fg;
+        let color_intent: Color = t.accent_warm;
+        let color_add: Color = t.accent_green;
+        let color_remove: Color = t.accent_red;
+        let color_hunk: Color = t.accent_blue;
 
         let max_y = area.y + area.height;
         let mut row = area.y;
@@ -63,10 +63,10 @@ impl Widget for PreviewPane<'_> {
         // Header: "edit #{id} {filename}"
         render_at(
             Line::from(vec![
-                Span::styled("edit #", Style::default().fg(COLOR_HEADER)),
-                Span::styled(edit.id.to_string(), Style::default().fg(COLOR_HEADER_VALUE)),
-                Span::styled("  ", Style::default().fg(COLOR_HEADER)),
-                Span::styled(edit.file.clone(), Style::default().fg(COLOR_HEADER_VALUE)),
+                Span::styled("edit #", Style::default().fg(color_header)),
+                Span::styled(edit.id.to_string(), Style::default().fg(color_header_value)),
+                Span::styled("  ", Style::default().fg(color_header)),
+                Span::styled(edit.file.clone(), Style::default().fg(color_header_value)),
             ]),
             area,
             row,
@@ -79,8 +79,8 @@ impl Widget for PreviewPane<'_> {
             if let Some(intent) = &edit.intent {
                 render_at(
                     Line::from(vec![
-                        Span::styled("intent: ", Style::default().fg(COLOR_INTENT)),
-                        Span::styled(intent.clone(), Style::default().fg(COLOR_INTENT)),
+                        Span::styled("intent: ", Style::default().fg(color_intent)),
+                        Span::styled(intent.clone(), Style::default().fg(color_intent)),
                     ]),
                     area,
                     row,
@@ -96,11 +96,11 @@ impl Widget for PreviewPane<'_> {
                 break;
             }
             let color = if diff_line.starts_with('+') {
-                COLOR_ADD
+                color_add
             } else if diff_line.starts_with('-') {
-                COLOR_REMOVE
+                color_remove
             } else if diff_line.starts_with("@@") {
-                COLOR_HUNK
+                color_hunk
             } else {
                 Color::Reset
             };
@@ -123,12 +123,12 @@ impl Widget for PreviewPane<'_> {
                 Line::from(vec![
                     Span::styled(
                         format!("+{}", edit.lines_added),
-                        Style::default().fg(COLOR_ADD),
+                        Style::default().fg(color_add),
                     ),
-                    Span::styled("  ", Style::default().fg(COLOR_HEADER)),
+                    Span::styled("  ", Style::default().fg(color_header)),
                     Span::styled(
                         format!("-{}", edit.lines_removed),
-                        Style::default().fg(COLOR_REMOVE),
+                        Style::default().fg(color_remove),
                     ),
                 ]),
                 area,
@@ -139,12 +139,8 @@ impl Widget for PreviewPane<'_> {
     }
 }
 
-const COLOR_DIM: Color = Color::Rgb(42, 46, 55);
-const COLOR_SUBTLE: Color = Color::Rgb(58, 62, 71);
-const COLOR_WARM: Color = Color::Rgb(138, 117, 96);
-
 /// Render the empty/welcome state when no edits have been tracked yet.
-fn render_empty_state(area: Rect, buf: &mut Buffer) {
+fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme) {
     if area.height < 5 || area.width < 30 {
         return;
     }
@@ -172,6 +168,11 @@ fn render_empty_state(area: Rect, buf: &mut Buffer) {
         ("?", "all keybindings"),
     ];
 
+    let color_warm = theme.accent_warm;
+    let color_subtle = theme.fg_dim;
+    let color_dim = theme.separator;
+    let color_empty = theme.fg_muted;
+
     // Center vertically
     let total_height = logo.len() + 2 + hints.len();
     let start_y = area.y + area.height.saturating_sub(total_height as u16) / 2;
@@ -183,7 +184,7 @@ fn render_empty_state(area: Rect, buf: &mut Buffer) {
             break;
         }
         let x = area.x + area.width.saturating_sub(line.len() as u16) / 2;
-        buf.set_string(x, y, *line, Style::default().fg(COLOR_WARM));
+        buf.set_string(x, y, *line, Style::default().fg(color_warm));
     }
 
     // Render hints
@@ -202,9 +203,9 @@ fn render_empty_state(area: Rect, buf: &mut Buffer) {
             // It's a section label
             let x = area.x + area.width.saturating_sub(key.len() as u16) / 2;
             let color = if key.contains("waiting") {
-                COLOR_SUBTLE
+                color_subtle
             } else {
-                COLOR_DIM
+                color_dim
             };
             buf.set_string(x, y, *key, Style::default().fg(color));
         } else {
@@ -216,9 +217,9 @@ fn render_empty_state(area: Rect, buf: &mut Buffer) {
                 x,
                 y,
                 format!("{:>14}", key),
-                Style::default().fg(COLOR_EMPTY),
+                Style::default().fg(color_empty),
             );
-            buf.set_string(x + 16, y, *desc, Style::default().fg(COLOR_SUBTLE));
+            buf.set_string(x + 16, y, *desc, Style::default().fg(color_subtle));
         }
     }
 }

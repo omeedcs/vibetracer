@@ -8,13 +8,6 @@ use ratatui::{
 
 use crate::tui::App;
 
-const COLOR_HEADER: Color = Color::Rgb(90, 101, 119);
-const COLOR_TRACK_NAME: Color = Color::Rgb(138, 143, 152);
-const COLOR_TRACK_STALE: Color = Color::Rgb(158, 90, 90);
-const COLOR_BAR_EDIT: Color = Color::Rgb(90, 101, 119);
-const COLOR_BAR_EMPTY: Color = Color::Rgb(26, 29, 34);
-const COLOR_PLAYHEAD: Color = Color::Rgb(138, 117, 96);
-
 const TRACK_NAME_WIDTH: usize = 14;
 const SEPARATOR: &str = " ";
 
@@ -70,6 +63,14 @@ impl Widget for TimelineWidget<'_> {
             return;
         }
 
+        let t = &self.app.theme;
+        let color_header: Color = t.fg_muted;
+        let color_track_name: Color = t.fg;
+        let color_track_stale: Color = t.accent_red;
+        let color_bar_edit: Color = t.bar_filled;
+        let color_bar_empty: Color = t.bar_empty;
+        let color_playhead: Color = t.accent_warm;
+
         let mut row = area.y;
         let max_y = area.y + area.height;
 
@@ -77,7 +78,7 @@ impl Widget for TimelineWidget<'_> {
         if row < max_y {
             let header = Line::from(vec![Span::styled(
                 "tracks",
-                Style::default().fg(COLOR_HEADER),
+                Style::default().fg(color_header),
             )]);
             header.render(
                 Rect {
@@ -104,7 +105,7 @@ impl Widget for TimelineWidget<'_> {
             if row < max_y {
                 let waiting = "waiting for file changes...";
                 let x = area.x + (area.width.saturating_sub(waiting.len() as u16)) / 2;
-                buf.set_string(x, row, waiting, Style::default().fg(Color::Rgb(42, 46, 55)));
+                buf.set_string(x, row, waiting, Style::default().fg(t.separator));
             }
             return;
         }
@@ -121,10 +122,10 @@ impl Widget for TimelineWidget<'_> {
                         "{} stale",
                         &Self::display_name(&track.filename)[..TRACK_NAME_WIDTH.min(8)]
                     ),
-                    COLOR_TRACK_STALE,
+                    color_track_stale,
                 )
             } else {
-                (Self::display_name(&track.filename), COLOR_TRACK_NAME)
+                (Self::display_name(&track.filename), color_track_name)
             };
 
             let mut spans: Vec<Span> = vec![
@@ -147,9 +148,9 @@ impl Widget for TimelineWidget<'_> {
                     };
                     let has_edit = track.edit_indices.contains(&edit_idx);
                     let (ch, color) = if has_edit {
-                        ("\u{2588}", COLOR_BAR_EDIT) // full block
+                        ("\u{2588}", color_bar_edit) // full block
                     } else {
-                        ("\u{2591}", COLOR_BAR_EMPTY) // light shade
+                        ("\u{2591}", color_bar_empty) // light shade
                     };
                     spans.push(Span::styled(ch, Style::default().fg(color)));
                 }
@@ -183,7 +184,7 @@ impl Widget for TimelineWidget<'_> {
 
             for cell in 0..bar_width {
                 let ch = if cell == playhead_col { "|" } else { "-" };
-                ph_spans.push(Span::styled(ch, Style::default().fg(COLOR_PLAYHEAD)));
+                ph_spans.push(Span::styled(ch, Style::default().fg(color_playhead)));
             }
 
             Line::from(ph_spans).render(

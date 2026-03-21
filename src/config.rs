@@ -92,6 +92,21 @@ impl Default for BlastRadiusConfig {
     }
 }
 
+/// Color theme configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    /// Which color preset to use: "dark", "catppuccin", "gruvbox", or "light".
+    pub preset: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            preset: "dark".into(),
+        }
+    }
+}
+
 /// Top-level vibetracer configuration, loaded from `.vibetracer/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -100,6 +115,7 @@ pub struct Config {
     pub sentinels: HashMap<String, SentinelRule>,
     pub watchdog: WatchdogConfig,
     pub blast_radius: BlastRadiusConfig,
+    pub theme: ThemeConfig,
 }
 
 impl Config {

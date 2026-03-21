@@ -8,15 +8,6 @@ use ratatui::{
 
 use crate::tui::{App, PlaybackState};
 
-const COLOR_DEFAULT: Color = Color::Rgb(138, 143, 152);
-const COLOR_SEPARATOR: Color = Color::Rgb(42, 46, 55);
-const COLOR_VALUE: Color = Color::Rgb(160, 168, 183);
-const COLOR_CONNECTED: Color = Color::Rgb(90, 158, 111);
-const COLOR_WATCHING: Color = Color::Rgb(138, 143, 152);
-const COLOR_LIVE: Color = Color::Rgb(90, 158, 111);
-const COLOR_PAUSED: Color = Color::Rgb(138, 143, 152);
-const COLOR_SPEED: Color = Color::Rgb(188, 140, 255);
-
 /// A single-line status bar widget.
 pub struct StatusBar<'a> {
     pub app: &'a App,
@@ -43,7 +34,18 @@ impl<'a> StatusBar<'a> {
 
 impl Widget for StatusBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let sep = Span::styled(" | ", Style::default().fg(COLOR_SEPARATOR));
+        let t = &self.app.theme;
+
+        let color_default: Color = t.fg_muted;
+        let color_separator: Color = t.separator;
+        let color_value: Color = t.fg;
+        let color_connected: Color = t.accent_green;
+        let color_watching: Color = t.fg_muted;
+        let color_live: Color = t.accent_green;
+        let color_paused: Color = t.fg_muted;
+        let color_speed: Color = t.accent_purple;
+
+        let sep = Span::styled(" | ", Style::default().fg(color_separator));
 
         // ── left side ────────────────────────────────────────────────────────
         let elapsed = self.elapsed_str();
@@ -51,35 +53,34 @@ impl Widget for StatusBar<'_> {
         let ckpt_count = self.app.checkpoint_ids.len();
 
         let left_spans = vec![
-            Span::styled("vibetracer", Style::default().fg(COLOR_DEFAULT)),
+            Span::styled("vibetracer", Style::default().fg(color_default)),
             sep.clone(),
-            Span::styled(elapsed, Style::default().fg(COLOR_VALUE)),
+            Span::styled(elapsed, Style::default().fg(color_value)),
             sep.clone(),
             Span::styled(
                 format!("{edit_count} edits"),
-                Style::default().fg(COLOR_VALUE),
+                Style::default().fg(color_value),
             ),
             sep.clone(),
             Span::styled(
                 format!("{ckpt_count} ckpts"),
-                Style::default().fg(COLOR_VALUE),
+                Style::default().fg(color_value),
             ),
         ];
 
         // ── right side ───────────────────────────────────────────────────────
         let (conn_text, conn_color) = if self.app.connected {
-            ("connected", COLOR_CONNECTED)
+            ("connected", color_connected)
         } else {
-            ("watching", COLOR_WATCHING)
+            ("watching", color_watching)
         };
 
         let (pb_text, pb_color) = match &self.app.playback {
-            PlaybackState::Live => ("live", COLOR_LIVE),
-            PlaybackState::Paused => ("paused", COLOR_PAUSED),
+            PlaybackState::Live => ("live", color_live),
+            PlaybackState::Paused => ("paused", color_paused),
             PlaybackState::Playing { speed } => {
-                // We'll handle the speed separately below.
                 let _ = speed;
-                ("", COLOR_SPEED)
+                ("", color_speed)
             }
         };
 
@@ -92,7 +93,7 @@ impl Widget for StatusBar<'_> {
             PlaybackState::Playing { speed } => {
                 right_spans.push(Span::styled(
                     format!("{speed}x"),
-                    Style::default().fg(COLOR_SPEED),
+                    Style::default().fg(color_speed),
                 ));
             }
             _ => {

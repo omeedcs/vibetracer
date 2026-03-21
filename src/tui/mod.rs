@@ -11,6 +11,7 @@ use crate::event::{EditEvent, EditKind};
 use crate::pty::EmbeddedTerminal;
 use crate::session::SessionManager;
 use crate::snapshot::{checkpoint::CheckpointManager, edit_log::EditLog, store::SnapshotStore};
+use crate::theme::Theme;
 use crate::watcher::{differ::compute_diff, fs_watcher::FsWatcher};
 use anyhow::Result;
 use chrono::Utc;
@@ -105,6 +106,9 @@ pub struct App {
     pub sentinel_violations: Vec<SentinelViolation>,
     pub blast_radius_status: Option<(String, DependencyStatus)>,
     pub equations: Vec<DetectedEquation>,
+
+    // Color theme
+    pub theme: Theme,
 }
 
 impl App {
@@ -141,6 +145,8 @@ impl App {
             sentinel_violations: Vec::new(),
             blast_radius_status: None,
             equations: Vec::new(),
+
+            theme: Theme::dark(),
         }
     }
 
@@ -231,18 +237,17 @@ impl Default for App {
     }
 }
 
-// ─── keybindings bar background color ─────────────────────────────────────────
-const COLOR_BG: Color = Color::Rgb(15, 17, 21);
+// ─── keybindings bar muted color (fallback for non-themed spans) ──────────────
 const COLOR_MUTED: Color = Color::Rgb(70, 75, 85);
 
-/// Render a solid background block over the entire terminal area.
-struct BgFill;
+/// Render a solid background block over the entire terminal area using the given color.
+struct BgFill(Color);
 impl Widget for BgFill {
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_bg(COLOR_BG);
+                    cell.set_bg(self.0);
                 }
             }
         }
@@ -296,6 +301,7 @@ pub fn run_tui_with_options(
     // ── app state ─────────────────────────────────────────────────────────────
     let mut app = App::new();
     app.connected = true;
+    app.theme = Theme::from_preset(&config.theme.preset);
 
     // ── embedded terminal (if requested) ─────────────────────────────────────
     if let Some(ref cmd) = options.embed_command {
@@ -344,7 +350,7 @@ pub fn run_tui_with_options(
             let buf = frame.buffer_mut();
 
             // Background fill.
-            BgFill.render(area, buf);
+            BgFill(app.theme.bg).render(area, buf);
 
             // Skip rendering if terminal is too small.
             if area.width < 20 || area.height < 8 {
