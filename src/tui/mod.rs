@@ -497,6 +497,32 @@ pub fn run_tui_with_options(
                                 edits_since_checkpoint = 0;
                             }
 
+                            input::Action::ToggleEquationLens => {
+                                input::apply_action(&mut app, input::Action::ToggleEquationLens);
+                                // Scan the current file for equations immediately.
+                                if app.equation_lens {
+                                    if let Some(edit) = app.current_edit() {
+                                        let file_path = project_path.join(&edit.file);
+                                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                            app.equations = eq_detect::extract_equations(&content);
+                                        }
+                                    }
+                                }
+                            }
+
+                            input::Action::ScrubLeft | input::Action::ScrubRight => {
+                                input::apply_action(&mut app, action);
+                                // Rescan equations if lens is on after scrubbing.
+                                if app.equation_lens {
+                                    if let Some(edit) = app.current_edit() {
+                                        let file_path = project_path.join(&edit.file);
+                                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                            app.equations = eq_detect::extract_equations(&content);
+                                        }
+                                    }
+                                }
+                            }
+
                             other => {
                                 input::apply_action(&mut app, other);
                             }
