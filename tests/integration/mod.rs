@@ -1,6 +1,11 @@
+pub mod blast_radius_test;
 pub mod config_test;
 pub mod hook_test;
+pub mod refactor_tracker_test;
 pub mod rewind_test;
+pub mod schema_diff_test;
+pub mod sentinel_test;
 pub mod session_test;
 pub mod snapshot_test;
+pub mod watchdog_test;
 pub mod watcher_test;
