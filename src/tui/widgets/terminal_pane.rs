@@ -44,11 +44,7 @@ impl Widget for TerminalPane<'_> {
             }
             // Strip ANSI escape sequences for clean rendering
             let clean = strip_ansi(line);
-            let truncated = if clean.len() > area.width as usize {
-                clean[..area.width as usize].to_string()
-            } else {
-                clean
-            };
+            let truncated: String = clean.chars().take(area.width as usize).collect();
             buf.set_string(
                 area.x,
                 y,
