@@ -1,5 +1,7 @@
 pub mod config;
 pub mod event;
+pub mod hook;
+pub mod rewind;
 pub mod session;
 pub mod snapshot;
 pub mod tui;
