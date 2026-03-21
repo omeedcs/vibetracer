@@ -10,7 +10,8 @@ use vibetracer::tui::{App, PlaybackState, RunOptions};
 #[derive(Parser)]
 #[command(
     name = "vibetracer",
-    about = "Trace, replay, and rewind AI coding edits"
+    about = "Trace, replay, and rewind AI coding edits",
+    version
 )]
 struct Cli {
     /// Project directory to watch (defaults to current directory)
@@ -27,6 +28,10 @@ struct Cli {
     /// Skip the startup animation
     #[arg(long)]
     no_splash: bool,
+
+    /// Write debug log to .vibetracer/debug.log
+    #[arg(long)]
+    debug: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -219,7 +224,47 @@ fn main() -> anyhow::Result<()> {
                 RunOptions::default()
             };
 
-            vibetracer::tui::run_tui_with_options(project_path, config, options)?;
+            if cli.debug {
+                let log_path = project_path.join(".vibetracer").join("debug.log");
+                std::fs::create_dir_all(log_path.parent().unwrap())?;
+                let file = std::fs::File::create(&log_path)?;
+                tracing_subscriber::fmt()
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .init();
+                eprintln!("debug log: {}", log_path.display());
+            }
+
+            // Ensure terminal is restored even on panic.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                vibetracer::tui::run_tui_with_options(project_path, config, options)
+            }));
+
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    // Normal error — terminal already restored by run_tui
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+                Err(panic_info) => {
+                    // Panic — force restore terminal
+                    let _ = crossterm::terminal::disable_raw_mode();
+                    let _ = crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::LeaveAlternateScreen,
+                        crossterm::cursor::Show
+                    );
+                    eprintln!("vibetracer crashed. Your terminal has been restored.");
+                    if let Some(msg) = panic_info.downcast_ref::<&str>() {
+                        eprintln!("panic: {msg}");
+                    } else if let Some(msg) = panic_info.downcast_ref::<String>() {
+                        eprintln!("panic: {msg}");
+                    }
+                    eprintln!("Please report this at https://github.com/omeedcs/vibetracer/issues");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 
