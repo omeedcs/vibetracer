@@ -86,8 +86,27 @@ impl EmbeddedTerminal {
         let bytes: Vec<u8> = match key.code {
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    let ctrl = (c as u8).wrapping_sub(b'a').wrapping_add(1);
-                    vec![ctrl]
+                    // For alphabetic chars, Ctrl+a=0x01 .. Ctrl+z=0x1a
+                    // For special chars: Ctrl+\=0x1c, Ctrl+]=0x1d, Ctrl+^=0x1e, Ctrl+_=0x1f
+                    if c.is_ascii_alphabetic() {
+                        let ctrl = (c.to_ascii_lowercase() as u8) - b'a' + 1;
+                        vec![ctrl]
+                    } else {
+                        match c {
+                            '\\' => vec![0x1c],
+                            ']' => vec![0x1d],
+                            '^' => vec![0x1e],
+                            '_' => vec![0x1f],
+                            '@' => vec![0x00],
+                            '[' => vec![0x1b],
+                            _ => {
+                                // Fallback: send the raw char
+                                let mut buf = [0u8; 4];
+                                let s = c.encode_utf8(&mut buf);
+                                s.as_bytes().to_vec()
+                            }
+                        }
+                    }
                 } else {
                     let mut buf = [0u8; 4];
                     let s = c.encode_utf8(&mut buf);

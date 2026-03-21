@@ -117,13 +117,9 @@ impl Widget for TimelineWidget<'_> {
             }
 
             let (name_text, name_color) = if track.stale {
-                (
-                    format!(
-                        "{} stale",
-                        &Self::display_name(&track.filename)[..TRACK_NAME_WIDTH.min(8)]
-                    ),
-                    color_track_stale,
-                )
+                let display = Self::display_name(&track.filename);
+                let truncated: String = display.chars().take(TRACK_NAME_WIDTH.min(8)).collect();
+                (format!("{} stale", truncated), color_track_stale)
             } else {
                 (Self::display_name(&track.filename), color_track_name)
             };

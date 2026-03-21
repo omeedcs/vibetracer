@@ -155,9 +155,13 @@ fn main() -> anyhow::Result<()> {
                 app.edits.len()
             );
 
-            // Run TUI in replay mode (no live watcher — load config or use default).
+            // Run TUI in replay mode with preloaded edits.
             let config = load_config_or_default(&project_path);
-            vibetracer::tui::run_tui(project_path, config)?;
+            let options = RunOptions {
+                initial_app: Some(app),
+                ..Default::default()
+            };
+            vibetracer::tui::run_tui_with_options(project_path, config, options)?;
         }
 
         // ── Import: import a past Claude Code session ─────────────────────────
@@ -219,8 +223,13 @@ fn main() -> anyhow::Result<()> {
                         jsonl_path.display()
                     );
 
+                    // Run TUI with preloaded edits.
                     let config = load_config_or_default(&project_path);
-                    vibetracer::tui::run_tui(project_path, config)?;
+                    let options = RunOptions {
+                        initial_app: Some(app),
+                        ..Default::default()
+                    };
+                    vibetracer::tui::run_tui_with_options(project_path, config, options)?;
                 }
             }
         }
@@ -242,6 +251,7 @@ fn main() -> anyhow::Result<()> {
             let options = if cli.embed {
                 RunOptions {
                     embed_command: Some(cli.cmd.clone()),
+                    ..Default::default()
                 }
             } else {
                 RunOptions::default()

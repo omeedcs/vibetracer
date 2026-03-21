@@ -89,6 +89,11 @@ fn run_animation(stdout: &mut io::Stdout) -> anyhow::Result<()> {
     let cols = cols as usize;
     let rows = rows as usize;
 
+    // Bail out early if the terminal is too small for the animation.
+    if cols < 10 || rows < 10 {
+        return Ok(());
+    }
+
     // ── Logo geometry ────────────────────────────────────────────────────────
     let logo_width = ASCII_LOGO.iter().map(|l| l.len()).max().unwrap_or(50);
     let logo_height = ASCII_LOGO.len(); // 5 lines
@@ -234,7 +239,7 @@ fn run_animation(stdout: &mut io::Stdout) -> anyhow::Result<()> {
         let elapsed_ms = phase3_start.elapsed().as_millis() as u64;
         let progress = (elapsed_ms as f64 / phase3_dur as f64).min(1.0);
         let head_x = track_x + (progress * track_width as f64) as usize;
-        let head_x = head_x.min(track_x + track_width - 1);
+        let head_x = head_x.min(track_x + track_width.saturating_sub(1));
 
         // Draw brightened blocks behind playhead + playhead line
         for (ti, &color) in track_colors.iter().enumerate() {

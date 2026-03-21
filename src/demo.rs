@@ -68,7 +68,7 @@ TEMPORAL_FEATURES = ["snr", "latency", "loss"]
         SentinelRule {
             description: "N_FEATURES must equal len(TEMPORAL_FEATURES)".to_string(),
             watch: "src/config.py".to_string(),
-            rule: "count_match".to_string(),
+            rule: "grep_match".to_string(),
             pattern_a: Some(PatternSpec {
                 file: "src/config.py".to_string(),
                 regex: r#"N_FEATURES\s*=\s*(\d+)"#.to_string(),
@@ -85,7 +85,7 @@ TEMPORAL_FEATURES = ["snr", "latency", "loss"]
         SentinelRule {
             description: "Predictor.input_size must match N_FEATURES".to_string(),
             watch: "src/model.py".to_string(),
-            rule: "count_match".to_string(),
+            rule: "grep_match".to_string(),
             pattern_a: Some(PatternSpec {
                 file: "src/config.py".to_string(),
                 regex: r#"N_FEATURES\s*=\s*(\d+)"#.to_string(),
@@ -113,13 +113,13 @@ TEMPORAL_FEATURES = ["snr", "latency", "loss"]
             constants: vec![
                 WatchdogConstant {
                     file: "src/physics.py".to_string(),
-                    pattern: r"EARTH_RADIUS_KM\s*=\s*[\d.]+".to_string(),
+                    pattern: r"EARTH_RADIUS_KM\s*=\s*([\d.]+)".to_string(),
                     expected: "6371.0".to_string(),
                     severity: "warning".to_string(),
                 },
                 WatchdogConstant {
                     file: "src/physics.py".to_string(),
-                    pattern: r"SPEED_OF_LIGHT\s*=\s*[\d.]+".to_string(),
+                    pattern: r"SPEED_OF_LIGHT\s*=\s*([\d.]+)".to_string(),
                     expected: "299792.458".to_string(),
                     severity: "error".to_string(),
                 },

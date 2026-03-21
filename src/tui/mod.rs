@@ -259,6 +259,8 @@ impl Widget for BgFill {
 pub struct RunOptions {
     /// If Some, spawn this command in the embedded terminal on startup.
     pub embed_command: Option<String>,
+    /// If Some, start with a pre-built App (e.g. for replay/import with preloaded edits).
+    pub initial_app: Option<App>,
 }
 
 /// Run the interactive TUI, watching `project_path` for changes.
@@ -299,7 +301,7 @@ pub fn run_tui_with_options(
     let mut terminal = Terminal::new(backend)?;
 
     // ── app state ─────────────────────────────────────────────────────────────
-    let mut app = App::new();
+    let mut app = options.initial_app.unwrap_or_default();
     app.connected = true;
     app.theme = Theme::from_preset(&config.theme.preset);
 
