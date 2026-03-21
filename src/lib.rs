@@ -4,6 +4,7 @@ pub mod equation;
 pub mod event;
 pub mod hook;
 pub mod import;
+pub mod pty;
 pub mod rewind;
 pub mod session;
 pub mod snapshot;

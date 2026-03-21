@@ -4,6 +4,7 @@ pub mod widgets;
 
 use crate::config::Config;
 use crate::event::{EditEvent, EditKind};
+use crate::pty::EmbeddedTerminal;
 use crate::session::SessionManager;
 use crate::snapshot::{checkpoint::CheckpointManager, edit_log::EditLog, store::SnapshotStore};
 use crate::watcher::{differ::compute_diff, fs_watcher::FsWatcher};
@@ -34,6 +35,7 @@ pub enum Pane {
     Preview,
     Timeline,
     Sidebar,
+    TerminalPane,
 }
 
 /// Which panel is active inside the sidebar.
@@ -87,6 +89,12 @@ pub struct App {
     pub connected: bool,
     pub should_quit: bool,
     pub tracks: Vec<TrackInfo>,
+
+    // Embedded terminal state
+    pub terminal: Option<EmbeddedTerminal>,
+    pub terminal_output: Vec<String>,
+    pub terminal_visible: bool,
+    pub last_vibetracer_pane: Option<Pane>,
 }
 
 impl App {
@@ -113,6 +121,11 @@ impl App {
             connected: false,
             should_quit: false,
             tracks: Vec::new(),
+
+            terminal: None,
+            terminal_output: Vec::new(),
+            terminal_visible: false,
+            last_vibetracer_pane: None,
         }
     }
 
@@ -188,6 +201,13 @@ impl App {
             self.playback = PlaybackState::Playing { speed };
         }
     }
+
+    /// Refresh terminal output from the embedded terminal into terminal_output.
+    pub fn sync_terminal_output(&mut self) {
+        if let Some(ref term) = self.terminal {
+            self.terminal_output = term.get_output(1000);
+        }
+    }
 }
 
 impl Default for App {
@@ -214,8 +234,24 @@ impl Widget for BgFill {
     }
 }
 
+/// Options for running the TUI.
+#[derive(Default)]
+pub struct RunOptions {
+    /// If Some, spawn this command in the embedded terminal on startup.
+    pub embed_command: Option<String>,
+}
+
 /// Run the interactive TUI, watching `project_path` for changes.
 pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
+    run_tui_with_options(project_path, config, RunOptions::default())
+}
+
+/// Run the interactive TUI with extra options (e.g. embedded terminal).
+pub fn run_tui_with_options(
+    project_path: PathBuf,
+    config: Config,
+    options: RunOptions,
+) -> Result<()> {
     // ── session setup ──────────────────────────────────────────────────────────
     let sessions_dir = project_path.join(".vibetracer").join("sessions");
     let session_manager = SessionManager::new(sessions_dir);
@@ -246,6 +282,22 @@ pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
     let mut app = App::new();
     app.connected = true;
 
+    // ── embedded terminal (if requested) ─────────────────────────────────────
+    if let Some(ref cmd) = options.embed_command {
+        match EmbeddedTerminal::new(80, 24, Some(cmd.as_str())) {
+            Ok(embed) => {
+                embed.start_reader();
+                app.terminal = Some(embed);
+                app.terminal_visible = true;
+                app.focused_pane = Pane::TerminalPane;
+            }
+            Err(e) => {
+                // Non-fatal: log but continue without embedded terminal.
+                eprintln!("warning: could not start embedded terminal: {e}");
+            }
+        }
+    }
+
     // Track last-known snapshot hashes per file path.
     let mut file_hashes: HashMap<String, String> = HashMap::new();
     // Auto-incrementing edit ID counter.
@@ -261,6 +313,9 @@ pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
 
     // ── main event loop ───────────────────────────────────────────────────────
     loop {
+        // Sync terminal output into app state before rendering.
+        app.sync_terminal_output();
+
         // ── render ────────────────────────────────────────────────────────────
         terminal.draw(|frame| {
             let area = frame.area();
@@ -269,10 +324,17 @@ pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
             // Background fill.
             BgFill.render(area, buf);
 
-            let layout = layout::compute_layout(area, app.sidebar_visible);
+            let layout = layout::compute_layout(area, app.sidebar_visible, app.terminal_visible);
 
             // Status bar.
             widgets::status_bar::StatusBar::new(&app).render(layout.status_bar, buf);
+
+            // Embedded terminal pane (if visible).
+            if let Some(term_rect) = layout.terminal {
+                let focused = app.focused_pane == Pane::TerminalPane;
+                widgets::terminal_pane::TerminalPane::new(&app.terminal_output, focused)
+                    .render(term_rect, buf);
+            }
 
             // Preview pane.
             widgets::preview::PreviewPane::new(&app).render(layout.preview, buf);
@@ -313,6 +375,23 @@ pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
             if let Event::Key(key) = ct_event::read()? {
                 // Ignore key-release events on platforms that emit them.
                 if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                    // Check for Ctrl+\ first — global toggle regardless of focus.
+                    use crossterm::event::{KeyCode, KeyModifiers};
+                    if key.code == KeyCode::Char('\\')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        input::apply_action(&mut app, input::Action::ToggleTerminalFocus);
+                        continue;
+                    }
+
+                    // When terminal pane is focused, forward all keys to the PTY.
+                    if app.focused_pane == Pane::TerminalPane {
+                        if let Some(ref term) = app.terminal {
+                            let _ = term.send_key(key);
+                        }
+                        continue;
+                    }
+
                     let action = input::map_key(key);
 
                     match action {

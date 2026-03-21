@@ -5,7 +5,7 @@ use vibetracer::config::Config;
 use vibetracer::import::claude::{import_session, list_sessions};
 use vibetracer::session::SessionManager;
 use vibetracer::snapshot::edit_log::EditLog;
-use vibetracer::tui::{App, PlaybackState};
+use vibetracer::tui::{App, PlaybackState, RunOptions};
 
 #[derive(Parser)]
 #[command(
@@ -15,6 +15,14 @@ use vibetracer::tui::{App, PlaybackState};
 struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
+
+    /// Run a command embedded in a pane (default: claude)
+    #[arg(long, short = 'e')]
+    embed: bool,
+
+    /// Command to embed (used with --embed, defaults to "claude")
+    #[arg(long, default_value = "claude")]
+    cmd: String,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -177,7 +185,16 @@ fn main() -> anyhow::Result<()> {
         None => {
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
-            vibetracer::tui::run_tui(project_path, config)?;
+
+            let options = if cli.embed {
+                RunOptions {
+                    embed_command: Some(cli.cmd.clone()),
+                }
+            } else {
+                RunOptions::default()
+            };
+
+            vibetracer::tui::run_tui_with_options(project_path, config, options)?;
         }
     }
 
