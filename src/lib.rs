@@ -8,5 +8,6 @@ pub mod pty;
 pub mod rewind;
 pub mod session;
 pub mod snapshot;
+pub mod splash;
 pub mod tui;
 pub mod watcher;

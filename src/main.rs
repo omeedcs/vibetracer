@@ -24,6 +24,10 @@ struct Cli {
     #[arg(long, default_value = "claude")]
     cmd: String,
 
+    /// Skip the startup animation
+    #[arg(long)]
+    no_splash: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -183,6 +187,10 @@ fn main() -> anyhow::Result<()> {
 
         // ── Default: run live TUI ──────────────────────────────────────────────
         None => {
+            if !cli.no_splash {
+                vibetracer::splash::play_splash()?;
+            }
+
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
 
