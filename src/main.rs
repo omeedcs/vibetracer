@@ -54,10 +54,27 @@ fn main() -> anyhow::Result<()> {
         // ── Init: write default config ─────────────────────────────────────────
         Some(Commands::Init) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let config_path = project_path.join(".vibetracer").join("config.toml");
-            let config = Config::default();
-            config.save(&config_path)?;
-            println!("wrote default config to {}", config_path.display());
+            let vt_dir = project_path.join(".vibetracer");
+            std::fs::create_dir_all(&vt_dir)?;
+            let config_path = vt_dir.join("config.toml");
+
+            if config_path.exists() {
+                println!("config already exists at {}", config_path.display());
+            } else {
+                std::fs::write(&config_path, default_config_with_examples())?;
+                println!("wrote config to {}", config_path.display());
+            }
+
+            // Suggest adding .vibetracer/ to .gitignore
+            let gitignore = project_path.join(".gitignore");
+            if gitignore.exists() {
+                let content = std::fs::read_to_string(&gitignore).unwrap_or_default();
+                if !content.contains(".vibetracer") {
+                    println!("hint: add .vibetracer/ to your .gitignore");
+                }
+            } else {
+                println!("hint: add .vibetracer/ to your .gitignore");
+            }
         }
 
         // ── Sessions: list past sessions ───────────────────────────────────────
@@ -221,4 +238,62 @@ fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
 fn load_config_or_default(project_path: &std::path::Path) -> Config {
     let config_path = project_path.join(".vibetracer").join("config.toml");
     Config::load(&config_path).unwrap_or_default()
+}
+
+/// Generate a config file with commented examples showing how to use each feature.
+fn default_config_with_examples() -> String {
+    r#"# vibetracer configuration
+# https://github.com/omeedcs/vibetracer
+
+[watch]
+debounce_ms = 100
+ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer", ".venv"]
+auto_checkpoint_every = 25
+
+# ── Watchdog ─────────────────────────────────────────────────────────────────
+# Register constants that should almost never change.
+# vibetracer alerts you instantly if an AI edit modifies one.
+#
+# [[watchdog.constants]]
+# file = "**/*.py"
+# pattern = 'EARTH_RADIUS_KM\s*=\s*([\d.]+)'
+# expected = "6371.0"
+# severity = "critical"    # "critical" = full alert, "warning" = sidebar note
+#
+# [[watchdog.constants]]
+# file = "**/*.rs"
+# pattern = 'const\s+MAX_RETRIES\s*:\s*\w+\s*=\s*(\d+)'
+# expected = "3"
+# severity = "warning"
+
+[watchdog]
+constants = []
+
+# ── Sentinels ────────────────────────────────────────────────────────────────
+# Cross-file invariant rules. vibetracer evaluates these on every edit
+# and alerts you when values fall out of sync.
+#
+# [sentinels.tensor_dims]
+# description = "feature count must match model input size"
+# watch = "**/*.py"
+# rule = "grep_match"
+# pattern_a = { file = "feature_config.py", regex = 'N_FEATURES\s*=\s*(\d+)' }
+# pattern_b = { file = "model.py", regex = 'input_size\s*=\s*(\d+)' }
+# assert = "a == b"
+
+[sentinels]
+
+# ── Blast Radius ─────────────────────────────────────────────────────────────
+# Declare file dependencies so vibetracer can warn you when a source file
+# is edited but its dependents haven't been updated yet.
+#
+# [[blast_radius.manual]]
+# source = "**/feature_config*.py"
+# dependents = ["**/predictor*.py", "**/serving*.py", "tests/test_model*.py"]
+
+[blast_radius]
+auto_detect = true
+manual = []
+"#
+    .to_string()
 }
