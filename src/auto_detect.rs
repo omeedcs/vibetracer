@@ -331,9 +331,7 @@ fn strip_numeric_type_suffix(s: &str) -> &str {
         "u8", "i8",
     ];
     for suffix in &suffixes {
-        if s.ends_with(suffix) {
-            let trimmed = &s[..s.len() - suffix.len()];
-            // Only valid if what remains looks numeric.
+        if let Some(trimmed) = s.strip_suffix(suffix) {
             if !trimmed.is_empty() {
                 return trimmed;
             }
