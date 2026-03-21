@@ -324,6 +324,15 @@ pub fn run_tui_with_options(
             // Background fill.
             BgFill.render(area, buf);
 
+            // Skip rendering if terminal is too small.
+            if area.width < 20 || area.height < 8 {
+                let msg = "terminal too small";
+                let x = area.x + area.width.saturating_sub(msg.len() as u16) / 2;
+                let y = area.y + area.height / 2;
+                buf.set_string(x, y, msg, Style::default().fg(Color::Rgb(158, 90, 90)));
+                return;
+            }
+
             let layout = layout::compute_layout(area, app.sidebar_visible, app.terminal_visible);
 
             // Status bar.
@@ -372,46 +381,66 @@ pub fn run_tui_with_options(
 
         // ── poll for crossterm events (100 ms timeout) ────────────────────────
         if ct_event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = ct_event::read()? {
-                // Ignore key-release events on platforms that emit them.
-                if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-                    // Check for Ctrl+\ first — global toggle regardless of focus.
-                    use crossterm::event::{KeyCode, KeyModifiers};
-                    if key.code == KeyCode::Char('\\')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        input::apply_action(&mut app, input::Action::ToggleTerminalFocus);
-                        continue;
+            match ct_event::read()? {
+                Event::Resize(_cols, _rows) => {
+                    // Resize the embedded PTY to match the actual terminal pane rect.
+                    if let Some(ref term) = app.terminal {
+                        if app.terminal_visible {
+                            let size = terminal.size()?;
+                            let area = Rect::new(0, 0, size.width, size.height);
+                            let lo = layout::compute_layout(area, app.sidebar_visible, true);
+                            if let Some(term_rect) = lo.terminal {
+                                let _ = term.resize(
+                                    term_rect.width.max(10),
+                                    term_rect.height.saturating_sub(1).max(3),
+                                );
+                            }
+                        }
                     }
-
-                    // When terminal pane is focused, forward all keys to the PTY.
-                    if app.focused_pane == Pane::TerminalPane {
-                        if let Some(ref term) = app.terminal {
-                            let _ = term.send_key(key);
-                        }
-                        continue;
-                    }
-
-                    let action = input::map_key(key);
-
-                    match action {
-                        input::Action::Quit => break,
-
-                        input::Action::Help => {
-                            show_help = !show_help;
+                    continue;
+                }
+                Event::Key(key) => {
+                    // Ignore key-release events on platforms that emit them.
+                    if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                        // Check for Ctrl+\ first — global toggle regardless of focus.
+                        use crossterm::event::{KeyCode, KeyModifiers};
+                        if key.code == KeyCode::Char('\\')
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            input::apply_action(&mut app, input::Action::ToggleTerminalFocus);
+                            continue;
                         }
 
-                        input::Action::Checkpoint => {
-                            let id = checkpoint_manager.save(current_file_hashes.clone())?;
-                            app.checkpoint_ids.push(id);
-                            edits_since_checkpoint = 0;
+                        // When terminal pane is focused, forward all keys to the PTY.
+                        if app.focused_pane == Pane::TerminalPane {
+                            if let Some(ref term) = app.terminal {
+                                let _ = term.send_key(key);
+                            }
+                            continue;
                         }
 
-                        other => {
-                            input::apply_action(&mut app, other);
+                        let action = input::map_key(key);
+
+                        match action {
+                            input::Action::Quit => break,
+
+                            input::Action::Help => {
+                                show_help = !show_help;
+                            }
+
+                            input::Action::Checkpoint => {
+                                let id = checkpoint_manager.save(current_file_hashes.clone())?;
+                                app.checkpoint_ids.push(id);
+                                edits_since_checkpoint = 0;
+                            }
+
+                            other => {
+                                input::apply_action(&mut app, other);
+                            }
                         }
                     }
                 }
+                _ => {} // Ignore mouse events, focus events, etc.
             }
         }
 

@@ -26,13 +26,22 @@ pub struct AppLayout {
 /// If only `sidebar_visible`, the main area is split 65% / 35% horizontally.
 pub fn compute_layout(area: Rect, sidebar_visible: bool, terminal_visible: bool) -> AppLayout {
     // ── top-level vertical split ─────────────────────────────────────────────
+    // Adapt timeline height to available space — shrink on small terminals.
+    let timeline_height = if area.height < 15 {
+        3
+    } else if area.height < 25 {
+        5
+    } else {
+        8
+    };
+
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // status bar
-            Constraint::Min(0),    // main area
-            Constraint::Length(8), // timeline
-            Constraint::Length(1), // keybindings
+            Constraint::Length(1),               // status bar
+            Constraint::Min(3),                  // main area (minimum 3 rows)
+            Constraint::Length(timeline_height), // timeline
+            Constraint::Length(1),               // keybindings
         ])
         .split(area);
 
