@@ -2,7 +2,11 @@ pub mod input;
 pub mod layout;
 pub mod widgets;
 
+use crate::analysis::blast_radius::{BlastRadiusTracker, DependencyStatus};
+use crate::analysis::sentinels::{SentinelEngine, SentinelViolation};
+use crate::analysis::watchdog::{Watchdog, WatchdogAlert};
 use crate::config::Config;
+use crate::equation::detect::{self as eq_detect, DetectedEquation};
 use crate::event::{EditEvent, EditKind};
 use crate::pty::EmbeddedTerminal;
 use crate::session::SessionManager;
@@ -95,6 +99,12 @@ pub struct App {
     pub terminal_output: Vec<String>,
     pub terminal_visible: bool,
     pub last_vibetracer_pane: Option<Pane>,
+
+    // Analysis state (populated by the event loop)
+    pub watchdog_alerts: Vec<WatchdogAlert>,
+    pub sentinel_violations: Vec<SentinelViolation>,
+    pub blast_radius_status: Option<(String, DependencyStatus)>,
+    pub equations: Vec<DetectedEquation>,
 }
 
 impl App {
@@ -126,6 +136,11 @@ impl App {
             terminal_output: Vec::new(),
             terminal_visible: false,
             last_vibetracer_pane: None,
+
+            watchdog_alerts: Vec::new(),
+            sentinel_violations: Vec::new(),
+            blast_radius_status: None,
+            equations: Vec::new(),
         }
     }
 
@@ -311,6 +326,13 @@ pub fn run_tui_with_options(
     // Whether the help overlay is visible.
     let mut show_help = false;
 
+    // Analysis engines.
+    let watchdog = Watchdog::new(config.watchdog.constants.clone());
+    let sentinel_engine = SentinelEngine::new(project_path.clone());
+    let blast_tracker = BlastRadiusTracker::new(config.blast_radius.clone());
+    // Track which files have been edited this session (for blast radius staleness).
+    let mut edited_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     // ── main event loop ───────────────────────────────────────────────────────
     loop {
         // Sync terminal output into app state before rendering.
@@ -343,6 +365,41 @@ pub fn run_tui_with_options(
                 let focused = app.focused_pane == Pane::TerminalPane;
                 widgets::terminal_pane::TerminalPane::new(&app.terminal_output, focused)
                     .render(term_rect, buf);
+            }
+
+            // Sidebar panels (if visible).
+            if let Some(sidebar_rect) = layout.sidebar {
+                match app.sidebar_panel {
+                    SidebarPanel::BlastRadius => {
+                        if let Some((ref source, ref status)) = app.blast_radius_status {
+                            widgets::blast_radius_panel::BlastRadiusPanel::new(source, status)
+                                .render(sidebar_rect, buf);
+                        } else {
+                            let msg = "no blast radius data";
+                            buf.set_string(
+                                sidebar_rect.x + 1,
+                                sidebar_rect.y + 1,
+                                msg,
+                                Style::default().fg(Color::Rgb(58, 62, 71)),
+                            );
+                        }
+                    }
+                    SidebarPanel::Sentinels => {
+                        widgets::sentinel_panel::SentinelPanel::new(&app.sentinel_violations)
+                            .render(sidebar_rect, buf);
+                    }
+                    SidebarPanel::Watchdog => {
+                        widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts)
+                            .render(sidebar_rect, buf);
+                    }
+                    SidebarPanel::Refactor => {
+                        widgets::refactor_panel::RefactorPanel::new(None).render(sidebar_rect, buf);
+                    }
+                    SidebarPanel::Equations => {
+                        widgets::equation_panel::EquationPanel::new(&app.equations, None)
+                            .render(sidebar_rect, buf);
+                    }
+                }
             }
 
             // Preview pane.
@@ -512,8 +569,49 @@ pub fn run_tui_with_options(
 
                     // Update state.
                     file_hashes.insert(rel_path.clone(), after_hash.clone());
-                    current_file_hashes.insert(rel_path, after_hash);
+                    current_file_hashes.insert(rel_path.clone(), after_hash);
+                    edited_files.insert(rel_path.clone());
                     app.push_edit(edit);
+
+                    // -- Run analysis engines on this edit --
+
+                    // Watchdog: check if a registered constant was modified.
+                    let alerts = watchdog.check(&rel_path, &old_content, &new_content);
+                    if !alerts.is_empty() {
+                        app.watchdog_alerts = alerts;
+                        app.sidebar_visible = true;
+                        app.sidebar_panel = SidebarPanel::Watchdog;
+                    }
+
+                    // Sentinels: evaluate all rules that watch this file.
+                    let mut violations = Vec::new();
+                    for (name, rule) in &config.sentinels {
+                        let watches = glob::Pattern::new(&rule.watch)
+                            .map(|p| p.matches(&rel_path))
+                            .unwrap_or(false);
+                        if watches {
+                            violations.extend(sentinel_engine.evaluate(name, rule));
+                        }
+                    }
+                    if !violations.is_empty() {
+                        app.sentinel_violations = violations;
+                        app.sidebar_visible = true;
+                        app.sidebar_panel = SidebarPanel::Sentinels;
+                    }
+
+                    // Blast radius: check dependents of this file.
+                    let dependents = blast_tracker.get_dependents(&rel_path);
+                    if !dependents.is_empty() {
+                        let status = blast_tracker.check_staleness(&rel_path, &edited_files);
+                        app.blast_radius_status = Some((rel_path.clone(), status));
+                        app.sidebar_visible = true;
+                        app.sidebar_panel = SidebarPanel::BlastRadius;
+                    }
+
+                    // Equations: if equation lens is on, detect equations.
+                    if app.equation_lens {
+                        app.equations = eq_detect::extract_equations(&new_content);
+                    }
 
                     edits_since_checkpoint += 1;
 

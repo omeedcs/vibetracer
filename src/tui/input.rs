@@ -108,32 +108,25 @@ pub fn apply_action(app: &mut App, action: Action) {
 
         Action::SetSpeed(s) => app.set_speed(s),
 
-        // Sidebar panel toggles — each opens the sidebar and switches to the relevant panel.
+        // Sidebar panel toggles — pressing the same key again closes the sidebar.
         Action::ToggleEquationLens => {
             app.equation_lens = !app.equation_lens;
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::Equations;
+            toggle_sidebar(app, SidebarPanel::Equations);
         }
         Action::ToggleBlastRadius => {
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::BlastRadius;
+            toggle_sidebar(app, SidebarPanel::BlastRadius);
         }
         Action::ToggleSentinels => {
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::Sentinels;
+            toggle_sidebar(app, SidebarPanel::Sentinels);
         }
         Action::ToggleSchemaMode => {
             app.schema_diff_mode = !app.schema_diff_mode;
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::Refactor;
         }
         Action::ToggleRefactorTracker => {
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::Refactor;
+            toggle_sidebar(app, SidebarPanel::Refactor);
         }
         Action::ToggleWatchdog => {
-            app.sidebar_visible = true;
-            app.sidebar_panel = SidebarPanel::Watchdog;
+            toggle_sidebar(app, SidebarPanel::Watchdog);
         }
 
         Action::CycleFocus => {
@@ -181,5 +174,16 @@ pub fn apply_action(app: &mut App, action: Action) {
         | Action::Search
         | Action::Help
         | Action::None => {}
+    }
+}
+
+/// Toggle a sidebar panel: if already showing this panel, close the sidebar.
+/// Otherwise, open the sidebar and switch to this panel.
+fn toggle_sidebar(app: &mut App, panel: SidebarPanel) {
+    if app.sidebar_visible && app.sidebar_panel == panel {
+        app.sidebar_visible = false;
+    } else {
+        app.sidebar_visible = true;
+        app.sidebar_panel = panel;
     }
 }
