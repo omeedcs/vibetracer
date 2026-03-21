@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="omeedtehrani/vibetracer"
+REPO="omeedcs/vibetracer"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 detect_platform() {
