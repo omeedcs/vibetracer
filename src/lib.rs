@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 pub mod analysis;
 pub mod config;
 pub mod equation;

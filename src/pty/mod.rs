@@ -7,7 +7,7 @@ pub struct EmbeddedTerminal {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     reader: Arc<Mutex<Box<dyn Read + Send>>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    output_buffer: Arc<Mutex<Vec<String>>>,
+    screen: Arc<Mutex<vt100::Parser>>,
     #[allow(dead_code)]
     cols: u16,
     #[allow(dead_code)]
@@ -36,49 +36,37 @@ impl EmbeddedTerminal {
         let reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
+        let parser = vt100::Parser::new(rows, cols, 0);
+
         Ok(Self {
             master: pair.master,
             child,
             reader: Arc::new(Mutex::new(reader)),
             writer: Arc::new(Mutex::new(writer)),
-            output_buffer: Arc::new(Mutex::new(Vec::new())),
+            screen: Arc::new(Mutex::new(parser)),
             cols,
             rows,
         })
     }
 
-    /// Spawn a thread that reads PTY output into the buffer.
+    /// Spawn a thread that reads PTY output and feeds it to the VT100 parser.
     pub fn start_reader(&self) -> std::thread::JoinHandle<()> {
         let reader = Arc::clone(&self.reader);
-        let buffer = Arc::clone(&self.output_buffer);
+        let screen = Arc::clone(&self.screen);
 
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
-                let mut reader = reader.lock().unwrap();
-                match reader.read(&mut buf) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        let text = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let mut buffer = buffer.lock().unwrap();
-                        // Split into lines, append to buffer
-                        for line in text.split('\n') {
-                            if let Some(last) = buffer.last_mut() {
-                                if !last.ends_with('\n') {
-                                    last.push_str(line);
-                                    continue;
-                                }
-                            }
-                            buffer.push(line.to_string());
-                        }
-                        // Keep buffer bounded (last 1000 lines)
-                        if buffer.len() > 1000 {
-                            let drain = buffer.len() - 1000;
-                            buffer.drain(..drain);
-                        }
+                let n = {
+                    let mut reader = reader.lock().unwrap();
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => n,
+                        Err(_) => break,
                     }
-                    Err(_) => break,
-                }
+                };
+                let mut screen = screen.lock().unwrap();
+                screen.process(&buf[..n]);
             }
         })
     }
@@ -98,7 +86,6 @@ impl EmbeddedTerminal {
         let bytes: Vec<u8> = match key.code {
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Ctrl+C = 0x03, Ctrl+D = 0x04, etc.
                     let ctrl = (c as u8).wrapping_sub(b'a').wrapping_add(1);
                     vec![ctrl]
                 } else {
@@ -123,14 +110,28 @@ impl EmbeddedTerminal {
         self.send_input(&bytes)
     }
 
-    /// Get the current terminal output (last N lines).
-    pub fn get_output(&self, max_lines: usize) -> Vec<String> {
-        let buffer = self.output_buffer.lock().unwrap();
-        let start = buffer.len().saturating_sub(max_lines);
-        buffer[start..].to_vec()
+    /// Get the current screen contents as lines of text from the VT100 parser.
+    pub fn get_screen_lines(&self, max_lines: usize) -> Vec<String> {
+        let screen = self.screen.lock().unwrap();
+        let s = screen.screen();
+        let contents = s.contents();
+        let mut lines: Vec<String> = contents.lines().map(|l| l.trim_end().to_string()).collect();
+
+        // Trim trailing empty lines
+        while lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+
+        let start = lines.len().saturating_sub(max_lines);
+        lines[start..].to_vec()
     }
 
-    /// Resize the PTY.
+    /// Get raw screen contents — each row as-is from the VT100 screen.
+    pub fn get_output(&self, max_lines: usize) -> Vec<String> {
+        self.get_screen_lines(max_lines)
+    }
+
+    /// Resize the PTY and the VT100 parser.
     pub fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<()> {
         self.master.resize(PtySize {
             rows,
@@ -138,6 +139,8 @@ impl EmbeddedTerminal {
             pixel_width: 0,
             pixel_height: 0,
         })?;
+        let mut screen = self.screen.lock().unwrap();
+        screen.set_size(rows, cols);
         Ok(())
     }
 
