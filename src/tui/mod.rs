@@ -635,6 +635,9 @@ pub fn run_tui_with_options(
         }
     }
 
+    // ── generate session summary before cleaning up ───────────────────────────
+    write_session_summary(&session, &app)?;
+
     // ── restore terminal ──────────────────────────────────────────────────────
     watcher.stop();
     disable_raw_mode()?;
@@ -643,14 +646,78 @@ pub fn run_tui_with_options(
 
     // ── session summary ───────────────────────────────────────────────────────
     let duration_secs = (Utc::now().timestamp() - app.session_start).max(0) as u64;
+    let summary_path = session.dir.join("summary.md");
     println!(
-        "session {} ended — {} edits, {} checkpoints, {}m{}s",
+        "session {} ended — {} edits, {} checkpoints, {}m{}s  (summary: {})",
         session.id,
         app.edits.len(),
         app.checkpoint_ids.len(),
         duration_secs / 60,
         duration_secs % 60,
+        summary_path.display(),
     );
+
+    Ok(())
+}
+
+fn write_session_summary(session: &crate::session::Session, app: &App) -> Result<()> {
+    use std::collections::HashMap;
+
+    let duration_secs = (chrono::Utc::now().timestamp() - app.session_start).max(0) as u64;
+    let minutes = duration_secs / 60;
+    let seconds = duration_secs % 60;
+
+    let mut file_stats: HashMap<String, (u32, u32, u32)> = HashMap::new(); // (edits, added, removed)
+    for edit in &app.edits {
+        let entry = file_stats.entry(edit.file.clone()).or_insert((0, 0, 0));
+        entry.0 += 1;
+        entry.1 += edit.lines_added;
+        entry.2 += edit.lines_removed;
+    }
+
+    let mut summary = String::new();
+    summary.push_str("# vibetracer session summary\n\n");
+    summary.push_str(&format!("**Session:** {}\n", session.id));
+    summary.push_str(&format!("**Duration:** {}m {:02}s\n", minutes, seconds));
+    summary.push_str(&format!("**Edits:** {}\n", app.edits.len()));
+    summary.push_str(&format!(
+        "**Checkpoints:** {}\n\n",
+        app.checkpoint_ids.len()
+    ));
+
+    // Files changed table (sorted by edit count descending)
+    summary.push_str("## Files Changed\n\n");
+    summary.push_str("| File | Edits | Lines Added | Lines Removed |\n");
+    summary.push_str("|------|-------|-------------|---------------|\n");
+
+    let mut files: Vec<_> = file_stats.iter().collect();
+    files.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+
+    for (file, (edits, added, removed)) in &files {
+        summary.push_str(&format!(
+            "| {} | {} | +{} | -{} |\n",
+            file, edits, added, removed
+        ));
+    }
+
+    // Timeline
+    summary.push_str("\n## Timeline\n\n");
+    summary.push_str("| # | Offset | File | Lines |\n");
+    summary.push_str("|---|--------|------|-------|\n");
+
+    let session_start_ms = app.session_start * 1000;
+    for edit in &app.edits {
+        let offset_secs = ((edit.ts - session_start_ms).max(0) / 1000) as u64;
+        let m = offset_secs / 60;
+        let s = offset_secs % 60;
+        summary.push_str(&format!(
+            "| {} | {}m{:02}s | {} | +{} -{} |\n",
+            edit.id, m, s, edit.file, edit.lines_added, edit.lines_removed
+        ));
+    }
+
+    let summary_path = session.dir.join("summary.md");
+    std::fs::write(&summary_path, &summary)?;
 
     Ok(())
 }
