@@ -2,8 +2,31 @@ pub mod input;
 pub mod layout;
 pub mod widgets;
 
-use crate::event::EditEvent;
+use crate::config::Config;
+use crate::event::{EditEvent, EditKind};
+use crate::session::SessionManager;
+use crate::snapshot::{checkpoint::CheckpointManager, edit_log::EditLog, store::SnapshotStore};
+use crate::watcher::{differ::compute_diff, fs_watcher::FsWatcher};
+use anyhow::Result;
 use chrono::Utc;
+use crossterm::{
+    event::{self as ct_event, Event, KeyEventKind},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    layout::Rect,
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::Widget,
+};
+use std::collections::HashMap;
+use std::io;
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::Duration;
 
 /// Which primary pane currently has keyboard focus.
 #[derive(Debug, Clone, PartialEq)]
@@ -171,4 +194,257 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ─── keybindings bar background color ─────────────────────────────────────────
+const COLOR_BG: Color = Color::Rgb(15, 17, 21);
+const COLOR_MUTED: Color = Color::Rgb(70, 75, 85);
+
+/// Render a solid background block over the entire terminal area.
+struct BgFill;
+impl Widget for BgFill {
+    fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_bg(COLOR_BG);
+                }
+            }
+        }
+    }
+}
+
+/// Run the interactive TUI, watching `project_path` for changes.
+pub fn run_tui(project_path: PathBuf, config: Config) -> Result<()> {
+    // ── session setup ──────────────────────────────────────────────────────────
+    let sessions_dir = project_path.join(".vibetracer").join("sessions");
+    let session_manager = SessionManager::new(sessions_dir);
+    let session = session_manager.create()?;
+
+    let snapshot_store = SnapshotStore::new(session.dir.join("snapshots"));
+    let edit_log = EditLog::new(session.dir.join("edits.jsonl"));
+    let checkpoint_manager = CheckpointManager::new(session.dir.join("checkpoints"));
+
+    // ── file-change channel & watcher ─────────────────────────────────────────
+    let (tx, rx) = mpsc::channel::<PathBuf>();
+    let mut watcher = FsWatcher::with_ignore(
+        project_path.clone(),
+        tx,
+        config.watch.debounce_ms,
+        config.watch.ignore.clone(),
+    )?;
+    watcher.start()?;
+
+    // ── terminal setup ────────────────────────────────────────────────────────
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // ── app state ─────────────────────────────────────────────────────────────
+    let mut app = App::new();
+    app.connected = true;
+
+    // Track last-known snapshot hashes per file path.
+    let mut file_hashes: HashMap<String, String> = HashMap::new();
+    // Auto-incrementing edit ID counter.
+    let mut edit_id_counter: u64 = 1;
+    // Edit count since last checkpoint (for auto-checkpoint).
+    let mut edits_since_checkpoint: u32 = 0;
+
+    // Current snapshot hashes for checkpoint saving.
+    let mut current_file_hashes: HashMap<String, String> = HashMap::new();
+
+    // Whether the help overlay is visible.
+    let mut show_help = false;
+
+    // ── main event loop ───────────────────────────────────────────────────────
+    loop {
+        // ── render ────────────────────────────────────────────────────────────
+        terminal.draw(|frame| {
+            let area = frame.area();
+            let buf = frame.buffer_mut();
+
+            // Background fill.
+            BgFill.render(area, buf);
+
+            let layout = layout::compute_layout(area, app.sidebar_visible);
+
+            // Status bar.
+            widgets::status_bar::StatusBar::new(&app).render(layout.status_bar, buf);
+
+            // Preview pane.
+            widgets::preview::PreviewPane::new(&app).render(layout.preview, buf);
+
+            // Timeline.
+            widgets::timeline::TimelineWidget::new(&app).render(layout.timeline, buf);
+
+            // Keybindings bar.
+            let kb_line = Line::from(vec![
+                Span::styled("b", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" blast radius", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
+                Span::styled("i", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" sentinels", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
+                Span::styled("d", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" schema diff", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
+                Span::styled("f", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" refactor", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
+                Span::styled("e", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" equations", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
+                Span::styled("w", Style::default().fg(Color::Rgb(138, 143, 152))),
+                Span::styled(" watchdog", Style::default().fg(COLOR_MUTED)),
+            ]);
+            kb_line.render(layout.keybindings, buf);
+
+            // Help overlay (on top of everything).
+            if show_help {
+                widgets::help_overlay::HelpOverlay.render(area, buf);
+            }
+        })?;
+
+        // ── poll for crossterm events (100 ms timeout) ────────────────────────
+        if ct_event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = ct_event::read()? {
+                // Ignore key-release events on platforms that emit them.
+                if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                    let action = input::map_key(key);
+
+                    match action {
+                        input::Action::Quit => break,
+
+                        input::Action::Help => {
+                            show_help = !show_help;
+                        }
+
+                        input::Action::Checkpoint => {
+                            let id = checkpoint_manager.save(current_file_hashes.clone())?;
+                            app.checkpoint_ids.push(id);
+                            edits_since_checkpoint = 0;
+                        }
+
+                        other => {
+                            input::apply_action(&mut app, other);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── drain file-change channel (non-blocking) ──────────────────────────
+        loop {
+            match rx.try_recv() {
+                Ok(abs_path) => {
+                    // Compute relative path from project root.
+                    let rel_path = abs_path
+                        .strip_prefix(&project_path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
+
+                    // Read new content from disk (or treat as delete if missing).
+                    let new_content = std::fs::read_to_string(&abs_path).unwrap_or_default();
+
+                    // Look up old content from snapshot store (empty if first edit).
+                    let old_content = if let Some(hash) = file_hashes.get(&rel_path) {
+                        snapshot_store
+                            .retrieve(hash)
+                            .ok()
+                            .and_then(|b| String::from_utf8(b).ok())
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    // Skip if content hasn't changed.
+                    if old_content == new_content {
+                        continue;
+                    }
+
+                    // Compute diff.
+                    let diff = compute_diff(&old_content, &new_content, &rel_path);
+
+                    // Determine edit kind.
+                    let kind = if !abs_path.exists() {
+                        EditKind::Delete
+                    } else if file_hashes.contains_key(&rel_path) {
+                        EditKind::Modify
+                    } else {
+                        EditKind::Create
+                    };
+
+                    // Store new snapshot.
+                    let after_hash = snapshot_store.store(new_content.as_bytes())?;
+
+                    let before_hash = file_hashes.get(&rel_path).cloned();
+
+                    // Build edit event.
+                    let edit = EditEvent {
+                        id: edit_id_counter,
+                        ts: Utc::now().timestamp_millis(),
+                        file: rel_path.clone(),
+                        kind,
+                        patch: diff.patch,
+                        before_hash,
+                        after_hash: after_hash.clone(),
+                        intent: None,
+                        tool: None,
+                        lines_added: diff.lines_added,
+                        lines_removed: diff.lines_removed,
+                    };
+
+                    edit_id_counter += 1;
+
+                    // Persist.
+                    edit_log.append(&edit)?;
+
+                    // Update state.
+                    file_hashes.insert(rel_path.clone(), after_hash.clone());
+                    current_file_hashes.insert(rel_path, after_hash);
+                    app.push_edit(edit);
+
+                    edits_since_checkpoint += 1;
+
+                    // Auto-checkpoint.
+                    if config.watch.auto_checkpoint_every > 0
+                        && edits_since_checkpoint >= config.watch.auto_checkpoint_every
+                    {
+                        let id = checkpoint_manager.save(current_file_hashes.clone())?;
+                        app.checkpoint_ids.push(id);
+                        edits_since_checkpoint = 0;
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            }
+        }
+
+        // Respect should_quit from apply_action (e.g. 'q' key).
+        if app.should_quit {
+            break;
+        }
+    }
+
+    // ── restore terminal ──────────────────────────────────────────────────────
+    watcher.stop();
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    // ── session summary ───────────────────────────────────────────────────────
+    let duration_secs = (Utc::now().timestamp() - app.session_start).max(0) as u64;
+    println!(
+        "session {} ended — {} edits, {} checkpoints, {}m{}s",
+        session.id,
+        app.edits.len(),
+        app.checkpoint_ids.len(),
+        duration_secs / 60,
+        duration_secs % 60,
+    );
+
+    Ok(())
 }
