@@ -50,6 +50,8 @@ enum Commands {
         /// Session ID or path to JSONL file (lists available sessions if omitted)
         session: Option<String>,
     },
+    /// Run a scripted demo session (for recording GIFs)
+    Demo,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -221,6 +223,11 @@ fn main() -> anyhow::Result<()> {
                     vibetracer::tui::run_tui(project_path, config)?;
                 }
             }
+        }
+
+        // ── Demo: run scripted demo session ───────────────────────────────────
+        Some(Commands::Demo) => {
+            vibetracer::demo::run_demo()?;
         }
 
         // ── Default: run live TUI ──────────────────────────────────────────────

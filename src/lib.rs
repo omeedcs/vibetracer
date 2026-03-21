@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod auto_detect;
 pub mod config;
+pub mod demo;
 pub mod equation;
 pub mod event;
 pub mod hook;
