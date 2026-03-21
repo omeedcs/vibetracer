@@ -59,33 +59,23 @@ pub fn extract_equations(source: &str) -> Vec<DetectedEquation> {
 
 /// Returns the text after `@eq:` if the line contains such an annotation.
 fn find_eq_annotation(line: &str) -> Option<String> {
-    // Supported prefixes: `// @eq:`, `# @eq:`, `/// @eq:`
-    let prefixes = ["/// @eq:", "// @eq:", "# @eq:"];
-    for prefix in &prefixes {
-        if let Some(rest) = line.find("@eq:").map(|_| ()) {
-            let _ = rest;
-            // More precise: find exactly "@eq:" possibly after a comment marker
-            if let Some(pos) = line.find("@eq:") {
-                // Ensure it is in a comment context (line starts with //, #, ///, or *)
-                let before = line[..pos].trim();
-                if before.is_empty()
-                    || before == "//"
-                    || before == "///"
-                    || before == "#"
-                    || before == "*"
-                    || before.ends_with("//")
-                    || before.ends_with("///")
-                    || before.ends_with('#')
-                    || before.ends_with('*')
-                {
-                    let after = &line[pos + "@eq:".len()..];
-                    let _ = prefix;
-                    return Some(after.trim().to_string());
-                }
-            }
-        }
+    let pos = line.find("@eq:")?;
+    let before = line[..pos].trim();
+    if before.is_empty()
+        || before == "//"
+        || before == "///"
+        || before == "#"
+        || before == "*"
+        || before.ends_with("//")
+        || before.ends_with("///")
+        || before.ends_with('#')
+        || before.ends_with('*')
+    {
+        let after = &line[pos + "@eq:".len()..];
+        Some(after.trim().to_string())
+    } else {
+        None
     }
-    None
 }
 
 /// Returns LaTeX from `$$...$$` delimiters if present.

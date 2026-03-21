@@ -35,5 +35,8 @@ fn test_watchdog_no_alert_when_unchanged() {
 
     let alerts = watchdog.check("src/geo.rs", content, content);
 
-    assert!(alerts.is_empty(), "expected no alerts when value is unchanged");
+    assert!(
+        alerts.is_empty(),
+        "expected no alerts when value is unchanged"
+    );
 }

@@ -14,7 +14,11 @@ pub struct RewindEngine {
 
 impl RewindEngine {
     /// Create a new `RewindEngine`.
-    pub fn new(project_root: PathBuf, store: SnapshotStore, checkpoint_mgr: CheckpointManager) -> Self {
+    pub fn new(
+        project_root: PathBuf,
+        store: SnapshotStore,
+        checkpoint_mgr: CheckpointManager,
+    ) -> Self {
         Self {
             project_root,
             store,
@@ -35,8 +39,7 @@ impl RewindEngine {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create parent dirs for {relative_path}"))?;
         }
-        std::fs::write(&dest, &content)
-            .with_context(|| format!("write file {relative_path}"))?;
+        std::fs::write(&dest, &content).with_context(|| format!("write file {relative_path}"))?;
 
         Ok(())
     }

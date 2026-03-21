@@ -58,8 +58,7 @@ impl RefactorTracker {
             updated_new_refs += new_count;
 
             if old_count > 0 {
-                remaining_files
-                    .push(path.to_string_lossy().to_string());
+                remaining_files.push(path.to_string_lossy().to_string());
             }
         });
 
@@ -100,10 +99,7 @@ impl RefactorTracker {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if matches!(name, ".git" | "node_modules" | "target") {
                     continue;
                 }

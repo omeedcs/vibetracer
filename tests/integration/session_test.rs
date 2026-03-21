@@ -6,19 +6,45 @@ fn test_session_id_format() {
     let id = Session::generate_id();
     // Expected format: YYYYMMDD-HHMMSS-xxxx
     let parts: Vec<&str> = id.split('-').collect();
-    assert_eq!(parts.len(), 3, "ID should have 3 parts separated by '-': got '{}'", id);
+    assert_eq!(
+        parts.len(),
+        3,
+        "ID should have 3 parts separated by '-': got '{}'",
+        id
+    );
 
     let date_part = parts[0];
     let time_part = parts[1];
     let hex_part = parts[2];
 
-    assert_eq!(date_part.len(), 8, "Date part should be 8 chars (YYYYMMDD): got '{}'", date_part);
-    assert!(date_part.chars().all(|c| c.is_ascii_digit()), "Date part should be all digits");
+    assert_eq!(
+        date_part.len(),
+        8,
+        "Date part should be 8 chars (YYYYMMDD): got '{}'",
+        date_part
+    );
+    assert!(
+        date_part.chars().all(|c| c.is_ascii_digit()),
+        "Date part should be all digits"
+    );
 
-    assert_eq!(time_part.len(), 6, "Time part should be 6 chars (HHMMSS): got '{}'", time_part);
-    assert!(time_part.chars().all(|c| c.is_ascii_digit()), "Time part should be all digits");
+    assert_eq!(
+        time_part.len(),
+        6,
+        "Time part should be 6 chars (HHMMSS): got '{}'",
+        time_part
+    );
+    assert!(
+        time_part.chars().all(|c| c.is_ascii_digit()),
+        "Time part should be all digits"
+    );
 
-    assert_eq!(hex_part.len(), 4, "Hex part should be 4 chars: got '{}'", hex_part);
+    assert_eq!(
+        hex_part.len(),
+        4,
+        "Hex part should be 4 chars: got '{}'",
+        hex_part
+    );
     assert!(
         hex_part.chars().all(|c| c.is_ascii_hexdigit()),
         "Hex part should be valid hex chars: got '{}'",
@@ -51,5 +77,8 @@ fn test_session_meta_persists() {
     let session_id = session.id.clone();
 
     let meta = manager.load_meta(&session_id).expect("load meta");
-    assert_eq!(meta.id, session_id, "Loaded meta ID should match session ID");
+    assert_eq!(
+        meta.id, session_id,
+        "Loaded meta ID should match session ID"
+    );
 }

@@ -40,10 +40,7 @@ pub fn compute_layout(area: Rect, sidebar_visible: bool) -> AppLayout {
     let (preview, sidebar) = if sidebar_visible {
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(65),
-                Constraint::Percentage(35),
-            ])
+            .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
             .split(main_area);
         (horizontal[0], Some(horizontal[1]))
     } else {

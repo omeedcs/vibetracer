@@ -38,11 +38,14 @@ pub struct EquationPanel<'a> {
 
 impl<'a> EquationPanel<'a> {
     pub fn new(equations: &'a [DetectedEquation], selected: Option<usize>) -> Self {
-        Self { equations, selected }
+        Self {
+            equations,
+            selected,
+        }
     }
 }
 
-impl<'a> Widget for EquationPanel<'a> {
+impl Widget for EquationPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;

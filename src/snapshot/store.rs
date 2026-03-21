@@ -42,8 +42,7 @@ impl SnapshotStore {
                 std::fs::create_dir_all(parent)
                     .with_context(|| format!("create prefix dir for hash {hash}"))?;
             }
-            std::fs::write(&path, content)
-                .with_context(|| format!("write object {hash}"))?;
+            std::fs::write(&path, content).with_context(|| format!("write object {hash}"))?;
         }
 
         Ok(hash)

@@ -48,10 +48,8 @@ impl CheckpointManager {
         let checkpoint = Checkpoint { id, ts, files };
 
         let path = self.dir.join(Self::filename(id));
-        let json = serde_json::to_string_pretty(&checkpoint)
-            .context("serialize checkpoint")?;
-        std::fs::write(&path, json)
-            .with_context(|| format!("write checkpoint {path:?}"))?;
+        let json = serde_json::to_string_pretty(&checkpoint).context("serialize checkpoint")?;
+        std::fs::write(&path, json).with_context(|| format!("write checkpoint {path:?}"))?;
 
         Ok(id)
     }
@@ -59,8 +57,8 @@ impl CheckpointManager {
     /// Load the checkpoint with the given `id` and return its `files` map.
     pub fn load(&self, id: u32) -> Result<HashMap<String, String>> {
         let path = self.dir.join(Self::filename(id));
-        let raw = std::fs::read_to_string(&path)
-            .with_context(|| format!("read checkpoint {path:?}"))?;
+        let raw =
+            std::fs::read_to_string(&path).with_context(|| format!("read checkpoint {path:?}"))?;
         let checkpoint: Checkpoint = serde_json::from_str(&raw)
             .with_context(|| format!("deserialize checkpoint {path:?}"))?;
         Ok(checkpoint.files)

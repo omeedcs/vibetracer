@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use tempfile::tempdir;
 use vibetracer::event::{EditEvent, EditKind};
-use vibetracer::snapshot::store::SnapshotStore;
-use vibetracer::snapshot::edit_log::EditLog;
 use vibetracer::snapshot::checkpoint::CheckpointManager;
+use vibetracer::snapshot::edit_log::EditLog;
+use vibetracer::snapshot::store::SnapshotStore;
 
 // ─── SnapshotStore tests ──────────────────────────────────────────────────────
 
@@ -43,9 +43,7 @@ fn test_store_deduplicates() {
     assert!(prefix_dir.exists(), "prefix dir should exist");
 
     // Only one file inside the prefix dir (not duplicated)
-    let entries: Vec<_> = std::fs::read_dir(&prefix_dir)
-        .unwrap()
-        .collect();
+    let entries: Vec<_> = std::fs::read_dir(&prefix_dir).unwrap().collect();
     assert_eq!(entries.len(), 1, "content should be stored exactly once");
 }
 

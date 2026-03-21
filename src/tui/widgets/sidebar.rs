@@ -1,8 +1,4 @@
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    widgets::Widget,
-};
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 use crate::tui::SidebarPanel;
 
@@ -23,7 +19,7 @@ impl<'a> Sidebar<'a> {
     }
 }
 
-impl<'a> Widget for Sidebar<'a> {
+impl Widget for Sidebar<'_> {
     fn render(self, _area: Rect, _buf: &mut Buffer) {
         // The Sidebar widget acts as a dispatch coordinator.
         // Panel-specific rendering is handled by the individual panel widgets

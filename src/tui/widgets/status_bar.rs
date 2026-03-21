@@ -41,7 +41,7 @@ impl<'a> StatusBar<'a> {
     }
 }
 
-impl<'a> Widget for StatusBar<'a> {
+impl Widget for StatusBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let sep = Span::styled(" | ", Style::default().fg(COLOR_SEPARATOR));
 

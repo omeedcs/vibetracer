@@ -43,7 +43,7 @@ impl<'a> PreviewPane<'a> {
     }
 }
 
-impl<'a> Widget for PreviewPane<'a> {
+impl Widget for PreviewPane<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;

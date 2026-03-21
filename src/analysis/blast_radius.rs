@@ -1,6 +1,6 @@
 use crate::config::BlastRadiusConfig;
 use glob::Pattern;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Result of a staleness check for a source file's dependents.
 #[derive(Debug, Clone)]
@@ -16,20 +16,11 @@ pub struct DependencyStatus {
 /// Tracks blast radius for edited files using manual dependency declarations.
 pub struct BlastRadiusTracker {
     config: BlastRadiusConfig,
-    /// Pre-built lookup: source → dependents.
-    manual_deps: HashMap<String, Vec<String>>,
 }
 
 impl BlastRadiusTracker {
     pub fn new(config: BlastRadiusConfig) -> Self {
-        let mut manual_deps: HashMap<String, Vec<String>> = HashMap::new();
-        for dep in &config.manual {
-            manual_deps
-                .entry(dep.source.clone())
-                .or_default()
-                .extend(dep.dependents.iter().cloned());
-        }
-        Self { config, manual_deps }
+        Self { config }
     }
 
     /// Return all declared dependents of `source` (exact match or glob).

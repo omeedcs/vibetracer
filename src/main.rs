@@ -7,7 +7,10 @@ use vibetracer::snapshot::edit_log::EditLog;
 use vibetracer::tui::{App, PlaybackState};
 
 #[derive(Parser)]
-#[command(name = "vibetracer", about = "Trace, replay, and rewind AI coding edits")]
+#[command(
+    name = "vibetracer",
+    about = "Trace, replay, and rewind AI coding edits"
+)]
 struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
@@ -49,16 +52,13 @@ fn main() -> anyhow::Result<()> {
             if sessions.is_empty() {
                 println!("no sessions found");
             } else {
-                println!("{:<30}  {:<20}  {}", "id", "started_at", "mode");
+                println!("{:<30}  {:<20}  mode", "id", "started_at");
                 println!("{}", "-".repeat(60));
                 for meta in sessions {
                     let dt = chrono::DateTime::from_timestamp(meta.started_at, 0)
                         .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_else(|| meta.started_at.to_string());
-                    println!(
-                        "{:<30}  {:<20}  {:?}",
-                        meta.id, dt, meta.mode
-                    );
+                    println!("{:<30}  {:<20}  {:?}", meta.id, dt, meta.mode);
                 }
             }
         }
@@ -122,7 +122,7 @@ fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
 }
 
 /// Load config from `.vibetracer/config.toml`, falling back to defaults.
-fn load_config_or_default(project_path: &PathBuf) -> Config {
+fn load_config_or_default(project_path: &std::path::Path) -> Config {
     let config_path = project_path.join(".vibetracer").join("config.toml");
     Config::load(&config_path).unwrap_or_default()
 }

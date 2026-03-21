@@ -73,7 +73,8 @@ impl HookBridge {
         let tool_name = iter.next()?.to_string();
         let json_str = iter.next().unwrap_or("{}");
 
-        let json: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::json!({}));
+        let json: serde_json::Value =
+            serde_json::from_str(json_str).unwrap_or(serde_json::json!({}));
 
         let file_path = json
             .get("file_path")

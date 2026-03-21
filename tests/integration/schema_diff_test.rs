@@ -1,6 +1,4 @@
-use vibetracer::analysis::schema_diff::{
-    diff_schemas, parse_schema, SchemaKind,
-};
+use vibetracer::analysis::schema_diff::{SchemaKind, diff_schemas, parse_schema};
 
 const PYDANTIC_SOURCE: &str = r#"
 class User(BaseModel):
@@ -11,8 +9,8 @@ class User(BaseModel):
 
 #[test]
 fn test_parse_pydantic_model() {
-    let schema = parse_schema(PYDANTIC_SOURCE, SchemaKind::Pydantic)
-        .expect("should parse pydantic model");
+    let schema =
+        parse_schema(PYDANTIC_SOURCE, SchemaKind::Pydantic).expect("should parse pydantic model");
 
     assert_eq!(schema.name, "User");
     assert_eq!(schema.fields.len(), 3);
@@ -38,10 +36,8 @@ class User(BaseModel):
     email: str
 "#;
 
-    let old_schema =
-        parse_schema(old_source, SchemaKind::Pydantic).expect("parse old schema");
-    let new_schema =
-        parse_schema(new_source, SchemaKind::Pydantic).expect("parse new schema");
+    let old_schema = parse_schema(old_source, SchemaKind::Pydantic).expect("parse old schema");
+    let new_schema = parse_schema(new_source, SchemaKind::Pydantic).expect("parse new schema");
 
     let diff = diff_schemas(&old_schema, &new_schema);
 

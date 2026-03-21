@@ -32,8 +32,7 @@ impl EditLog {
 
     /// Read all events from the log file at `path`.
     pub fn read_all(path: &Path) -> Result<Vec<EditEvent>> {
-        let file = std::fs::File::open(path)
-            .with_context(|| format!("open edit log {path:?}"))?;
+        let file = std::fs::File::open(path).with_context(|| format!("open edit log {path:?}"))?;
         let reader = std::io::BufReader::new(file);
         let mut events = Vec::new();
         for (i, line) in reader.lines().enumerate() {

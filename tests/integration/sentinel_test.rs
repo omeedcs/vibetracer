@@ -29,7 +29,10 @@ fn test_grep_match_sentinel_passes() {
     let rule = make_rule("versions must match", "a.py", "b.py", "a == b");
 
     let violations = engine.evaluate("version_sync", &rule);
-    assert!(violations.is_empty(), "expected no violations when values match");
+    assert!(
+        violations.is_empty(),
+        "expected no violations when values match"
+    );
 }
 
 #[test]
@@ -42,7 +45,11 @@ fn test_grep_match_sentinel_fails() {
     let rule = make_rule("versions must match", "a.py", "b.py", "a == b");
 
     let violations = engine.evaluate("version_sync", &rule);
-    assert_eq!(violations.len(), 1, "expected one violation when values differ");
+    assert_eq!(
+        violations.len(),
+        1,
+        "expected one violation when values differ"
+    );
     let v = &violations[0];
     assert_eq!(v.value_a, "4");
     assert_eq!(v.value_b, "3");

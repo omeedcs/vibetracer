@@ -32,12 +32,9 @@ fn test_blast_radius_stale_detection() {
     let tracker = BlastRadiusTracker::new(make_config());
 
     // source + 1 of 3 dependents were edited
-    let edited: HashSet<String> = [
-        "src/core.rs".to_string(),
-        "src/api.rs".to_string(),
-    ]
-    .into_iter()
-    .collect();
+    let edited: HashSet<String> = ["src/core.rs".to_string(), "src/api.rs".to_string()]
+        .into_iter()
+        .collect();
 
     let status = tracker.check_staleness("src/core.rs", &edited);
 

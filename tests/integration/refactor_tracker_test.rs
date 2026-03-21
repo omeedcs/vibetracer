@@ -42,7 +42,9 @@ fn test_track_propagation() {
     let mut tracker = RefactorTracker::new();
     tracker.track_rename(dir.path(), "check_auth", "validate_token");
 
-    let status = tracker.get_status("check_auth").expect("status should exist");
+    let status = tracker
+        .get_status("check_auth")
+        .expect("status should exist");
 
     assert_eq!(status.old_name, "check_auth");
     assert_eq!(status.new_name, "validate_token");

@@ -41,7 +41,7 @@ impl<'a> RefactorPanel<'a> {
     }
 }
 
-impl<'a> Widget for RefactorPanel<'a> {
+impl Widget for RefactorPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;
@@ -104,7 +104,10 @@ impl<'a> Widget for RefactorPanel<'a> {
             Line::from(vec![
                 Span::styled(status.old_name.clone(), Style::default().fg(COLOR_DEFAULT)),
                 Span::styled(" -> ", Style::default().fg(COLOR_DIM)),
-                Span::styled(status.new_name.clone(), Style::default().fg(COLOR_PROGRESS_FILLED)),
+                Span::styled(
+                    status.new_name.clone(),
+                    Style::default().fg(COLOR_PROGRESS_FILLED),
+                ),
             ]),
             area,
             row,

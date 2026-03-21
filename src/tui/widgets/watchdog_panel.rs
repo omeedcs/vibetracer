@@ -42,7 +42,7 @@ impl<'a> WatchdogPanel<'a> {
     }
 }
 
-impl<'a> Widget for WatchdogPanel<'a> {
+impl Widget for WatchdogPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;
@@ -96,7 +96,11 @@ impl<'a> Widget for WatchdogPanel<'a> {
 
         for alert in self.alerts {
             let is_critical = alert.severity.to_lowercase() == "critical";
-            let text_color = if is_critical { COLOR_CRITICAL } else { COLOR_DEFAULT };
+            let text_color = if is_critical {
+                COLOR_CRITICAL
+            } else {
+                COLOR_DEFAULT
+            };
 
             // File
             if row >= max_y {
@@ -121,7 +125,10 @@ impl<'a> Widget for WatchdogPanel<'a> {
                 Line::from(vec![
                     Span::styled("|   ", Style::default().fg(COLOR_DIM)),
                     Span::styled("pattern: ", Style::default().fg(COLOR_LABEL)),
-                    Span::styled(alert.constant_pattern.clone(), Style::default().fg(COLOR_DIM)),
+                    Span::styled(
+                        alert.constant_pattern.clone(),
+                        Style::default().fg(COLOR_DIM),
+                    ),
                 ]),
                 area,
                 row,

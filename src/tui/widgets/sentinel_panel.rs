@@ -41,7 +41,7 @@ impl<'a> SentinelPanel<'a> {
     }
 }
 
-impl<'a> Widget for SentinelPanel<'a> {
+impl Widget for SentinelPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;
@@ -101,7 +101,10 @@ impl<'a> Widget for SentinelPanel<'a> {
             render_at(
                 Line::from(vec![
                     Span::styled("| ", Style::default().fg(COLOR_DIM)),
-                    Span::styled(violation.rule_name.clone(), Style::default().fg(COLOR_HEADER)),
+                    Span::styled(
+                        violation.rule_name.clone(),
+                        Style::default().fg(COLOR_HEADER),
+                    ),
                 ]),
                 area,
                 row,
@@ -116,7 +119,10 @@ impl<'a> Widget for SentinelPanel<'a> {
             render_at(
                 Line::from(vec![
                     Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled(violation.description.clone(), Style::default().fg(COLOR_DEFAULT)),
+                    Span::styled(
+                        violation.description.clone(),
+                        Style::default().fg(COLOR_DEFAULT),
+                    ),
                 ]),
                 area,
                 row,
@@ -132,9 +138,15 @@ impl<'a> Widget for SentinelPanel<'a> {
                 Line::from(vec![
                     Span::styled("|   ", Style::default().fg(COLOR_DIM)),
                     Span::styled("a: ", Style::default().fg(COLOR_LABEL)),
-                    Span::styled(violation.value_a.clone(), Style::default().fg(COLOR_DEFAULT)),
+                    Span::styled(
+                        violation.value_a.clone(),
+                        Style::default().fg(COLOR_DEFAULT),
+                    ),
                     Span::styled("  b: ", Style::default().fg(COLOR_LABEL)),
-                    Span::styled(violation.value_b.clone(), Style::default().fg(COLOR_DEFAULT)),
+                    Span::styled(
+                        violation.value_b.clone(),
+                        Style::default().fg(COLOR_DEFAULT),
+                    ),
                 ]),
                 area,
                 row,
@@ -150,7 +162,10 @@ impl<'a> Widget for SentinelPanel<'a> {
                 Line::from(vec![
                     Span::styled("|   ", Style::default().fg(COLOR_DIM)),
                     Span::styled("assert: ", Style::default().fg(COLOR_LABEL)),
-                    Span::styled(violation.assertion.clone(), Style::default().fg(COLOR_DEFAULT)),
+                    Span::styled(
+                        violation.assertion.clone(),
+                        Style::default().fg(COLOR_DEFAULT),
+                    ),
                 ]),
                 area,
                 row,

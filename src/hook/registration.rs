@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::Path;
 
 const VIBETRACER_DESCRIPTION: &str = "vibetracer edit tracking";
@@ -16,8 +16,7 @@ pub fn register_hook(claude_dir: &Path, socket_path: &str) -> Result<()> {
     let mut settings: Value = if settings_path.exists() {
         let raw = std::fs::read_to_string(&settings_path)
             .with_context(|| format!("read {:?}", settings_path))?;
-        serde_json::from_str(&raw)
-            .with_context(|| format!("parse {:?}", settings_path))?
+        serde_json::from_str(&raw).with_context(|| format!("parse {:?}", settings_path))?
     } else {
         json!({})
     };
@@ -29,9 +28,7 @@ pub fn register_hook(claude_dir: &Path, socket_path: &str) -> Result<()> {
 
     // Remove any existing vibetracer entries.
     let hooks = settings["hooks"].as_array_mut().unwrap();
-    hooks.retain(|entry| {
-        !entry_has_vibetracer_description(entry)
-    });
+    hooks.retain(|entry| !entry_has_vibetracer_description(entry));
 
     // Build the new hook entry.
     let new_entry = json!({
@@ -47,8 +44,7 @@ pub fn register_hook(claude_dir: &Path, socket_path: &str) -> Result<()> {
     hooks.push(new_entry);
 
     // Write back.
-    std::fs::create_dir_all(claude_dir)
-        .with_context(|| format!("create dir {:?}", claude_dir))?;
+    std::fs::create_dir_all(claude_dir).with_context(|| format!("create dir {:?}", claude_dir))?;
     let json_str = serde_json::to_string_pretty(&settings).context("serialize settings")?;
     std::fs::write(&settings_path, json_str)
         .with_context(|| format!("write {:?}", settings_path))?;
@@ -66,8 +62,8 @@ pub fn unregister_hook(claude_dir: &Path) -> Result<()> {
 
     let raw = std::fs::read_to_string(&settings_path)
         .with_context(|| format!("read {:?}", settings_path))?;
-    let mut settings: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("parse {:?}", settings_path))?;
+    let mut settings: Value =
+        serde_json::from_str(&raw).with_context(|| format!("parse {:?}", settings_path))?;
 
     if let Some(hooks) = settings.get_mut("hooks").and_then(|v| v.as_array_mut()) {
         hooks.retain(|entry| !entry_has_vibetracer_description(entry));

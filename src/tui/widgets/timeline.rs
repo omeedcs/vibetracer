@@ -64,7 +64,7 @@ impl<'a> TimelineWidget<'a> {
     }
 }
 
-impl<'a> Widget for TimelineWidget<'a> {
+impl Widget for TimelineWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;

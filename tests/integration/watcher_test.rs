@@ -14,8 +14,14 @@ fn test_compute_unified_diff() {
     let result = compute_diff(old, new, "test.txt");
 
     assert!(!result.patch.is_empty(), "Patch should not be empty");
-    assert!(result.patch.contains('+'), "Patch should contain added lines");
-    assert!(result.patch.contains('-'), "Patch should contain removed lines");
+    assert!(
+        result.patch.contains('+'),
+        "Patch should contain added lines"
+    );
+    assert!(
+        result.patch.contains('-'),
+        "Patch should contain removed lines"
+    );
     assert!(result.lines_added > 0, "Should have lines added");
     assert!(result.lines_removed > 0, "Should have lines removed");
 }
@@ -25,7 +31,10 @@ fn test_no_diff_when_identical() {
     let content = "same content\nno changes here\n";
     let result = compute_diff(content, content, "test.txt");
 
-    assert!(result.patch.is_empty(), "Patch should be empty for identical content");
+    assert!(
+        result.patch.is_empty(),
+        "Patch should be empty for identical content"
+    );
     assert_eq!(result.lines_added, 0, "Should have zero lines added");
     assert_eq!(result.lines_removed, 0, "Should have zero lines removed");
 }
@@ -37,8 +46,7 @@ fn test_watcher_detects_file_create() {
     let dir = tempdir().unwrap();
     let (tx, rx) = mpsc::channel::<std::path::PathBuf>();
 
-    let mut watcher = FsWatcher::new(dir.path().to_path_buf(), tx, 50)
-        .expect("create watcher");
+    let mut watcher = FsWatcher::new(dir.path().to_path_buf(), tx, 50).expect("create watcher");
     watcher.start().expect("start watcher");
 
     // Give the watcher a moment to initialize
@@ -50,7 +58,10 @@ fn test_watcher_detects_file_create() {
 
     // Wait up to 2 seconds for an event
     let received = rx.recv_timeout(Duration::from_secs(2));
-    assert!(received.is_ok(), "Should receive a filesystem event within 2 seconds");
+    assert!(
+        received.is_ok(),
+        "Should receive a filesystem event within 2 seconds"
+    );
 
     watcher.stop();
 }
@@ -62,8 +73,8 @@ fn test_watcher_respects_ignore_patterns() {
 
     // Ignore .git directory
     let ignore = vec![".git".to_string()];
-    let mut watcher = FsWatcher::with_ignore(dir.path().to_path_buf(), tx, 50, ignore)
-        .expect("create watcher");
+    let mut watcher =
+        FsWatcher::with_ignore(dir.path().to_path_buf(), tx, 50, ignore).expect("create watcher");
     watcher.start().expect("start watcher");
 
     // Give the watcher a moment to initialize
@@ -100,7 +111,11 @@ fn test_watcher_respects_ignore_patterns() {
     // Ensure no .git paths were received
     for path in &received_paths {
         let has_git = path.components().any(|c| c.as_os_str() == ".git");
-        assert!(!has_git, "Should not receive events for .git paths, got: {:?}", path);
+        assert!(
+            !has_git,
+            "Should not receive events for .git paths, got: {:?}",
+            path
+        );
     }
 
     // At least one event should have been received (the regular file)

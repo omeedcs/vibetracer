@@ -10,7 +10,10 @@ fn test_register_hook_creates_settings() {
     register_hook(&claude_dir, socket_path).expect("register hook");
 
     let settings_path = claude_dir.join("settings.local.json");
-    assert!(settings_path.exists(), "settings.local.json should be created");
+    assert!(
+        settings_path.exists(),
+        "settings.local.json should be created"
+    );
 
     let contents = std::fs::read_to_string(&settings_path).unwrap();
     assert!(

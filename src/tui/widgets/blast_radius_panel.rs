@@ -39,11 +39,14 @@ pub struct BlastRadiusPanel<'a> {
 
 impl<'a> BlastRadiusPanel<'a> {
     pub fn new(source_file: &'a str, status: &'a DependencyStatus) -> Self {
-        Self { source_file, status }
+        Self {
+            source_file,
+            status,
+        }
     }
 }
 
-impl<'a> Widget for BlastRadiusPanel<'a> {
+impl Widget for BlastRadiusPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.height == 0 {
             return;
@@ -85,9 +88,8 @@ impl<'a> Widget for BlastRadiusPanel<'a> {
         }
 
         // Subheader: "{source_file} changed — N dependents:"
-        let total = self.status.stale.len()
-            + self.status.updated.len()
-            + self.status.untouched.len();
+        let total =
+            self.status.stale.len() + self.status.updated.len() + self.status.untouched.len();
         render_at(
             Line::from(vec![Span::styled(
                 format!("{} changed -- {} dependents:", self.source_file, total),

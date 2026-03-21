@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use tempfile::tempdir;
+use vibetracer::rewind::RewindEngine;
 use vibetracer::snapshot::checkpoint::CheckpointManager;
 use vibetracer::snapshot::store::SnapshotStore;
-use vibetracer::rewind::RewindEngine;
 
 fn make_engine(tmp: &tempfile::TempDir) -> RewindEngine {
     let store = SnapshotStore::new(tmp.path().join("store"));
@@ -25,7 +25,9 @@ fn test_rewind_restores_file() {
     std::fs::write(&file_path, b"modified content").unwrap();
 
     // Rewind the file to the stored snapshot.
-    engine.rewind_file("src/lib.rs", &hash).expect("rewind file");
+    engine
+        .rewind_file("src/lib.rs", &hash)
+        .expect("rewind file");
 
     // Verify the file content was restored.
     let restored = std::fs::read(&file_path).unwrap();
@@ -45,5 +47,8 @@ fn test_rewind_creates_pre_rewind_checkpoint() {
         .rewind_all(&current_states, "target_hash")
         .expect("rewind_all");
 
-    assert!(checkpoint_id > 0, "checkpoint ID should be > 0, got {checkpoint_id}");
+    assert!(
+        checkpoint_id > 0,
+        "checkpoint ID should be > 0, got {checkpoint_id}"
+    );
 }
