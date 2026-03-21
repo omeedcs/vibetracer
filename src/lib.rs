@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod config;
+pub mod equation;
 pub mod event;
 pub mod hook;
 pub mod rewind;
