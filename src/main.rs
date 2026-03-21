@@ -2,6 +2,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use vibetracer::config::Config;
+use vibetracer::import::claude::{import_session, list_sessions};
 use vibetracer::session::SessionManager;
 use vibetracer::snapshot::edit_log::EditLog;
 use vibetracer::tui::{App, PlaybackState};
@@ -27,6 +28,11 @@ enum Commands {
     Sessions,
     /// Create default config
     Init,
+    /// Import a past Claude Code session for replay
+    Import {
+        /// Session ID or path to JSONL file (lists available sessions if omitted)
+        session: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -100,6 +106,71 @@ fn main() -> anyhow::Result<()> {
             // Run TUI in replay mode (no live watcher — load config or use default).
             let config = load_config_or_default(&project_path);
             vibetracer::tui::run_tui(project_path, config)?;
+        }
+
+        // ── Import: import a past Claude Code session ─────────────────────────
+        Some(Commands::Import { session }) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+
+            match session {
+                None => {
+                    // List available sessions
+                    let sessions = list_sessions(&project_path)?;
+                    if sessions.is_empty() {
+                        println!("no Claude Code sessions found for this project");
+                    } else {
+                        println!("{:<40}  {:<22}  edits", "id", "started_at");
+                        println!("{}", "-".repeat(70));
+                        for s in sessions {
+                            let dt = chrono::DateTime::from_timestamp_millis(s.started_at)
+                                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                                .unwrap_or_else(|| s.started_at.to_string());
+                            println!("{:<40}  {:<22}  {}", s.id, dt, s.edit_count);
+                        }
+                    }
+                }
+                Some(session_arg) => {
+                    // Resolve the JSONL path
+                    let jsonl_path = if session_arg.ends_with(".jsonl") {
+                        PathBuf::from(&session_arg)
+                    } else {
+                        // Treat as UUID — look it up under ~/.claude/projects/
+                        let home = dirs::home_dir()
+                            .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
+                        let converted = project_path.to_string_lossy().replace('/', "-");
+                        home.join(".claude")
+                            .join("projects")
+                            .join(&converted)
+                            .join(format!("{}.jsonl", session_arg))
+                    };
+
+                    if !jsonl_path.exists() {
+                        anyhow::bail!("session file not found: {}", jsonl_path.display());
+                    }
+
+                    let edits = import_session(&jsonl_path, &project_path)?;
+
+                    // Build app in Paused mode with imported edits
+                    let mut app = App::new();
+                    app.playback = PlaybackState::Paused;
+                    for edit in &edits {
+                        app.push_edit(edit.clone());
+                    }
+                    if !app.edits.is_empty() {
+                        app.playhead = 0;
+                        app.playback = PlaybackState::Paused;
+                    }
+
+                    println!(
+                        "imported {} edits from {}",
+                        app.edits.len(),
+                        jsonl_path.display()
+                    );
+
+                    let config = load_config_or_default(&project_path);
+                    vibetracer::tui::run_tui(project_path, config)?;
+                }
+            }
         }
 
         // ── Default: run live TUI ──────────────────────────────────────────────

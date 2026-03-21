@@ -3,6 +3,7 @@ pub mod config;
 pub mod equation;
 pub mod event;
 pub mod hook;
+pub mod import;
 pub mod rewind;
 pub mod session;
 pub mod snapshot;
