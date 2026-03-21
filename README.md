@@ -18,30 +18,38 @@ vibetracer solves this.
 
 ## Features
 
-**Director's Cut Interface** — Your coding session is a film. Each file is a track. Each edit is a clip. Scrub through time with a playhead, play back the session, or rewind to any point.
+**Director's Cut Interface** -- Your coding session is a film. Each file is a track. Each edit is a clip. Scrub through time with a playhead, play back the session, or rewind to any point.
 
 **Three Tiers of Time Travel:**
 - Edit-level: undo individual edits surgically
 - File-level: rewind a specific file to any prior state
 - Session checkpoints: snapshot the entire project and jump between states
 
-**Blast Radius Detection** — When a file is edited, see which dependent files need updating. Catches partial refactors where the AI updates 3 of 5 files and moves on.
+**Blast Radius Detection** -- When a file is edited, see which dependent files need updating. Catches partial refactors where the AI updates 3 of 5 files and moves on.
 
-**Invariant Sentinels** — Define rules like "tensor input dimensions must match feature count." vibetracer alerts you instantly when an edit breaks an invariant.
+**Invariant Sentinels** -- Define rules like "tensor input dimensions must match feature count." vibetracer alerts you instantly when an edit breaks an invariant.
 
-**Constants Watchdog** — Register values that should never change (physics constants, API endpoints). Get an alert if the AI "helpfully" modifies them.
+**Constants Watchdog** -- Register values that should never change (physics constants, API endpoints). Get an alert if the AI "helpfully" modifies them.
 
-**Refactor Tracker** — When a function is renamed, track propagation across the codebase. See how many call sites have been updated vs. how many remain.
+**Refactor Tracker** -- When a function is renamed, track propagation across the codebase. See how many call sites have been updated vs. how many remain.
 
-**Schema Diff** — Structural diffs for Pydantic models, TypeScript interfaces, and SQL schemas. See "field `age` added" instead of raw text diffs.
+**Schema Diff** -- Structural diffs for Pydantic models, TypeScript interfaces, and SQL schemas. See "field `age` added" instead of raw text diffs.
 
-**Equation Lens** — Render LaTeX equations found in code comments as typeset math. Watch equations evolve across edits.
+**Equation Lens** -- Render LaTeX equations found in code comments as typeset math (Unicode rendering). Watch equations evolve across edits.
 
-**Claude Code Integration** — Optional enriched mode: when connected to Claude Code via hooks, edits include intent labels ("adding auth middleware") and tool metadata.
+**Claude Code Integration** -- Optional enriched mode: when connected to Claude Code via hooks, edits include intent labels ("adding auth middleware") and tool metadata. Auto-detected when `.claude/` directory exists.
 
-**Session Import** — Replay past Claude Code sessions with full analysis applied retroactively.
+**Session Import** -- Replay past Claude Code sessions with full analysis applied retroactively. Parses conversation JSONL from `~/.claude/projects/`.
 
-**Embedded Terminal** — Run Claude Code inside vibetracer itself. No tab switching.
+**Embedded Terminal** -- Run Claude Code (or any command) inside vibetracer itself. No tab switching. Toggle focus with `Ctrl+\`.
+
+**Smart Auto-Detection** -- `vibetracer init` scans your project and auto-generates watchdog rules for constants, sentinel rules for config/model invariants, and blast radius mappings for schema and config file dependencies.
+
+**Color Themes** -- Choose from dark (default), catppuccin, gruvbox, or light. Set `preset` in `[theme]` section of config.
+
+**Session Summaries** -- On exit, vibetracer generates a markdown summary of the session with files changed, line stats, and a timeline of every edit.
+
+**Graceful Error Recovery** -- If vibetracer crashes, your terminal is always restored. Use `--debug` to write a log file for bug reports.
 
 ## Install
 
@@ -79,17 +87,35 @@ vibetracer ~/my-project
 # Run with Claude Code embedded in a pane
 vibetracer --embed ~/my-project
 
-# Import a past Claude Code session
+# Run with a custom embedded command
+vibetracer --embed --cmd zsh ~/my-project
+
+# Import a past Claude Code session (list available)
 vibetracer import
 
-# Replay a saved session
+# Import a specific session by ID
+vibetracer import <session-id>
+
+# Replay a saved vibetracer session
 vibetracer replay <session-id>
 
-# List past sessions
+# List past vibetracer sessions
 vibetracer sessions
 
-# Create default config
+# Initialize config with smart auto-detection
 vibetracer init
+
+# Run the scripted demo (for recording GIFs)
+vibetracer demo
+
+# Skip the startup animation
+vibetracer --no-splash ~/my-project
+
+# Write debug log for troubleshooting
+vibetracer --debug ~/my-project
+
+# Show version
+vibetracer --version
 ```
 
 ## Keybindings
@@ -113,56 +139,78 @@ vibetracer init
 | `d` | schema diff |
 | `f` | refactor tracker |
 | `w` | watchdog |
-| `Ctrl+\` | toggle terminal focus |
-| `?` | help |
+| `Ctrl+\` | toggle terminal focus (embedded mode) |
+| `Tab` | cycle between panes |
+| `?` | help overlay |
 | `q` | quit |
 
 ## Configuration
 
-Run `vibetracer init` to create `.vibetracer/config.toml`:
+Run `vibetracer init` in your project directory. It scans for constants, schemas, and config files, then generates `.vibetracer/config.toml` with auto-detected rules.
+
+Example generated config:
 
 ```toml
+# vibetracer configuration (auto-generated)
+# https://github.com/omeedcs/vibetracer
+
 [watch]
 debounce_ms = 100
-ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer"]
+ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer", ".venv"]
 auto_checkpoint_every = 25
 
-# Define invariant rules
-[sentinels.tensor_dims]
-description = "feature count must match model input size"
-watch = ["**/feature_config*.py", "**/predictor*.py"]
-rule = "grep_match"
-pattern_a = { file = "**/feature_config*.py", regex = 'N_TEMPORAL\s*=\s*(\d+)' }
-pattern_b = { file = "**/predictor*.py", regex = 'input_size\s*=\s*(\d+)' }
-assert = "a == b"
+[theme]
+preset = "dark"    # options: "dark", "catppuccin", "gruvbox", "light"
 
-# Watch constants that should never change
+# Auto-detected watchdog constants
 [[watchdog.constants]]
 file = "**/*.py"
 pattern = 'EARTH_RADIUS_KM\s*=\s*([\d.]+)'
 expected = "6371.0"
 severity = "critical"
 
-# Declare file dependencies
+[[watchdog.constants]]
+file = "**/*.py"
+pattern = 'SPEED_OF_LIGHT\s*=\s*([\d.]+)'
+expected = "299792.458"
+severity = "critical"
+
+# Auto-detected sentinel rules
+[sentinels.feature_count]
+description = "feature count must match model input size"
+watch = "**/*.py"
+rule = "grep_match"
+pattern_a = { file = "config.py", regex = 'N_FEATURES\s*=\s*(\d+)' }
+pattern_b = { file = "model.py", regex = 'input_size\s*=\s*(\d+)' }
+assert = "a == b"
+
+# Auto-detected file dependencies
 [blast_radius]
 auto_detect = true
 
 [[blast_radius.manual]]
-source = "**/feature_config*.py"
-dependents = ["**/predictor*.py", "**/serving*.py"]
+source = "**/config*.py"
+dependents = ["**/model*.py", "**/serving*.py"]
 ```
+
+You can also write rules manually. See the [design spec](docs/superpowers/specs/2026-03-20-vibetracer-design.md) for the full configuration reference.
 
 ## How It Works
 
-vibetracer watches your project directory for filesystem changes. Each edit is captured as a diff, stored in a content-addressed snapshot store, and logged to an append-only edit journal. The TUI renders this as a horizontal multi-track timeline (inspired by non-linear video editors).
+vibetracer watches your project directory for filesystem changes. Each edit is captured as a diff, stored in a content-addressed snapshot store, and logged to an append-only edit journal. The TUI renders this as a horizontal multi-track timeline inspired by non-linear video editors like Premiere Pro.
 
-When Claude Code is detected, vibetracer registers a `PostToolUse` hook to capture tool metadata and intent context, enriching each edit with "why" in addition to "what."
+When Claude Code is detected (`.claude/` directory exists), vibetracer automatically registers a `PostToolUse` hook to capture tool metadata and intent context, enriching each edit with "why" in addition to "what." The hook is removed on exit.
 
-All data is stored locally in `.vibetracer/` within your project directory.
+Analysis engines run automatically on every edit:
+- **Watchdog** fires when a registered constant is modified
+- **Sentinels** evaluate when a watched file pattern is touched
+- **Blast radius** shows dependent files when a source file changes
+
+All data is stored locally in `.vibetracer/` within your project directory. Add it to your `.gitignore`.
 
 ## Tech Stack
 
-Rust, ratatui, crossterm, notify, similar, serde, clap, portable-pty
+Rust, ratatui, crossterm, notify, similar, serde, clap, portable-pty, vt100
 
 ## Contributing
 
