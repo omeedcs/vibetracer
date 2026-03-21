@@ -52,16 +52,7 @@ impl Widget for PreviewPane<'_> {
         let edit = match self.app.current_edit() {
             Some(e) => e,
             None => {
-                // Empty state.
-                render_at(
-                    Line::from(vec![Span::styled(
-                        "no edits yet",
-                        Style::default().fg(COLOR_EMPTY),
-                    )]),
-                    area,
-                    area.y,
-                    buf,
-                );
+                render_empty_state(area, buf);
                 return;
             }
         };
@@ -144,6 +135,90 @@ impl Widget for PreviewPane<'_> {
                 row,
                 buf,
             );
+        }
+    }
+}
+
+const COLOR_DIM: Color = Color::Rgb(42, 46, 55);
+const COLOR_SUBTLE: Color = Color::Rgb(58, 62, 71);
+const COLOR_WARM: Color = Color::Rgb(138, 117, 96);
+
+/// Render the empty/welcome state when no edits have been tracked yet.
+fn render_empty_state(area: Rect, buf: &mut Buffer) {
+    if area.height < 5 || area.width < 30 {
+        return;
+    }
+
+    let logo = [
+        r"       _ _          _                          ",
+        r"__   _(_) |__   ___| |_ _ __ __ _  ___ ___ _ __",
+        r"\ \ / / | '_ \ / _ \ __| '__/ _` |/ __/ _ \ '__|",
+        r" \ V /| | |_) |  __/ |_| | | (_| | (_|  __/ |  ",
+        r"  \_/ |_|_.__/ \___|\__|_|  \__,_|\___\___|_|  ",
+    ];
+
+    let hints = [
+        ("", ""),
+        ("waiting for edits", ""),
+        ("", ""),
+        ("start coding in another pane", "vibetracer will"),
+        ("track every change automatically", ""),
+        ("", ""),
+        ("left/right", "scrub through edits"),
+        ("Space", "play / pause replay"),
+        ("r", "rewind to playhead"),
+        ("c", "create checkpoint"),
+        ("b i w f e", "toggle analysis panels"),
+        ("?", "all keybindings"),
+    ];
+
+    // Center vertically
+    let total_height = logo.len() + 2 + hints.len();
+    let start_y = area.y + area.height.saturating_sub(total_height as u16) / 2;
+
+    // Render logo
+    for (i, line) in logo.iter().enumerate() {
+        let y = start_y + i as u16;
+        if y >= area.y + area.height {
+            break;
+        }
+        let x = area.x + area.width.saturating_sub(line.len() as u16) / 2;
+        buf.set_string(x, y, *line, Style::default().fg(COLOR_WARM));
+    }
+
+    // Render hints
+    let hints_start = start_y + logo.len() as u16 + 2;
+    for (i, (key, desc)) in hints.iter().enumerate() {
+        let y = hints_start + i as u16;
+        if y >= area.y + area.height {
+            break;
+        }
+
+        if key.is_empty() && desc.is_empty() {
+            continue;
+        }
+
+        if desc.is_empty() {
+            // It's a section label
+            let x = area.x + area.width.saturating_sub(key.len() as u16) / 2;
+            let color = if key.contains("waiting") {
+                COLOR_SUBTLE
+            } else {
+                COLOR_DIM
+            };
+            buf.set_string(x, y, *key, Style::default().fg(color));
+        } else {
+            // Key + description
+            let text = format!("{:>14}  {}", key, desc);
+            let x = area.x + area.width.saturating_sub(text.len() as u16) / 2;
+            // Render key part brighter, desc part dimmer
+            buf.set_string(
+                x,
+                y,
+                format!("{:>14}", key),
+                Style::default().fg(COLOR_EMPTY),
+            );
+            buf.set_string(x + 16, y, *desc, Style::default().fg(COLOR_SUBTLE));
         }
     }
 }

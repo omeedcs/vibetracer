@@ -98,6 +98,17 @@ impl Widget for TimelineWidget<'_> {
         let name_and_sep = TRACK_NAME_WIDTH + SEPARATOR.len();
         let bar_width = (area.width as usize).saturating_sub(name_and_sep);
 
+        // Empty state — show a subtle waiting indicator instead of nothing.
+        if tracks.is_empty() && row < max_y {
+            row += 1; // skip a line
+            if row < max_y {
+                let waiting = "waiting for file changes...";
+                let x = area.x + (area.width.saturating_sub(waiting.len() as u16)) / 2;
+                buf.set_string(x, row, waiting, Style::default().fg(Color::Rgb(42, 46, 55)));
+            }
+            return;
+        }
+
         // ── render each track row ─────────────────────────────────────────────
         for track in &tracks {
             if row >= max_y {
