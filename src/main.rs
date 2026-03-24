@@ -21,6 +21,10 @@ struct Cli {
     #[arg(long)]
     debug: bool,
 
+    /// Internal: run as daemon child process (do not use directly)
+    #[arg(long, hide = true)]
+    daemon_child: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -38,12 +42,111 @@ enum Commands {
         /// Session ID or path to JSONL file (lists available sessions if omitted)
         session: Option<String>,
     },
+    /// Manage the background recorder daemon
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommands,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum DaemonCommands {
+    /// Start the background recorder
+    Start,
+    /// Stop the background recorder
+    Stop,
+    /// Show daemon status
+    Status,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // ── Daemon child mode ────────────────────────────────────────────────────
+    // When spawned with --daemon-child, run the daemon main loop directly.
+    if cli.daemon_child {
+        let project_path = resolve_path(cli.path.as_deref())?;
+        let config = load_config_or_default(&project_path);
+        return vibetracer::daemon::run_daemon(project_path, config);
+    }
+
     match cli.command {
+        // ── Daemon subcommands ───────────────────────────────────────────────
+        Some(Commands::Daemon { command }) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+
+            match command {
+                DaemonCommands::Start => {
+                    match vibetracer::daemon::start_daemon(&project_path) {
+                        Ok((pid, session_id)) => {
+                            println!(
+                                "daemon started (PID {}, session {})",
+                                pid, session_id
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                DaemonCommands::Stop => {
+                    match vibetracer::daemon::stop_daemon(&project_path) {
+                        Ok(()) => {
+                            println!("daemon stopped");
+                        }
+                        Err(e) => {
+                            eprintln!("error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                DaemonCommands::Status => {
+                    match vibetracer::daemon::daemon_status(&project_path) {
+                        Ok(status_json) => {
+                            // Pretty-print the status.
+                            if let Ok(value) =
+                                serde_json::from_str::<serde_json::Value>(&status_json)
+                            {
+                                let pid = value.get("pid").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let session = value
+                                    .get("session_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                let uptime = value
+                                    .get("uptime_secs")
+                                    .and_then(|v| v.as_i64())
+                                    .unwrap_or(0);
+                                let edits = value
+                                    .get("edit_count")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let agents = value
+                                    .get("agents")
+                                    .and_then(|v| v.as_array())
+                                    .map(|a| a.len())
+                                    .unwrap_or(0);
+
+                                println!("pid:       {}", pid);
+                                println!("session:   {}", session);
+                                println!("uptime:    {}s", uptime);
+                                println!("edits:     {}", edits);
+                                println!("agents:    {}", agents);
+                            } else {
+                                println!("{}", status_json);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
+
         // ── Init: write auto-detected config ──────────────────────────────────
         Some(Commands::Init) => {
             let project_path = resolve_path(cli.path.as_deref())?;
@@ -176,7 +279,7 @@ fn main() -> anyhow::Result<()> {
                     let jsonl_path = if session_arg.ends_with(".jsonl") {
                         PathBuf::from(&session_arg)
                     } else {
-                        // Treat as UUID — look it up under ~/.claude/projects/
+                        // Treat as UUID -- look it up under ~/.claude/projects/
                         let home = dirs::home_dir()
                             .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
                         let converted = project_path.to_string_lossy().replace('/', "-");
@@ -246,12 +349,12 @@ fn main() -> anyhow::Result<()> {
             match result {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
-                    // Normal error — terminal already restored by run_tui
+                    // Normal error -- terminal already restored by run_tui
                     eprintln!("error: {e}");
                     std::process::exit(1);
                 }
                 Err(panic_info) => {
-                    // Panic — force restore terminal
+                    // Panic -- force restore terminal
                     let _ = crossterm::terminal::disable_raw_mode();
                     let _ = crossterm::execute!(
                         std::io::stdout(),
