@@ -286,6 +286,12 @@ pub fn import_session(jsonl_path: &Path, project_root: &Path) -> Result<Vec<Edit
                 tool: Some(tool_name.to_string()),
                 lines_added: diff_result.lines_added,
                 lines_removed: diff_result.lines_removed,
+                agent_id: None,
+                agent_label: None,
+                operation_id: None,
+                operation_intent: None,
+                tool_name: None,
+                restore_id: None,
             };
 
             events.push(event);

@@ -463,6 +463,12 @@ pub fn run_tui_with_options(
                         tool: None,
                         lines_added: diff.lines_added,
                         lines_removed: diff.lines_removed,
+                        agent_id: None,
+                        agent_label: None,
+                        operation_id: None,
+                        operation_intent: None,
+                        tool_name: None,
+                        restore_id: None,
                     };
 
                     edit_id_counter += 1;

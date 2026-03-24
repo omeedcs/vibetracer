@@ -62,6 +62,12 @@ fn make_event(id: u64, file: &str) -> EditEvent {
         tool: None,
         lines_added: 1,
         lines_removed: 1,
+        agent_id: None,
+        agent_label: None,
+        operation_id: None,
+        operation_intent: None,
+        tool_name: None,
+        restore_id: None,
     }
 }
 

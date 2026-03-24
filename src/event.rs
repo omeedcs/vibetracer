@@ -27,13 +27,33 @@ pub struct EditEvent {
     /// SHA-256 hex digest of the file content after the edit.
     pub after_hash: String,
     /// Free-form intent description (e.g. from an AI hook).
+    #[serde(default)]
     pub intent: Option<String>,
     /// Name of the tool that triggered the edit (e.g. "cursor", "claude").
+    #[serde(default)]
     pub tool: Option<String>,
     /// Number of lines added by this edit.
     pub lines_added: u32,
     /// Number of lines removed by this edit.
     pub lines_removed: u32,
+    /// Identifier of the agent that produced this edit (e.g. Claude instance ID).
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    /// Human-readable label for the agent (e.g. "claude-1").
+    #[serde(default)]
+    pub agent_label: Option<String>,
+    /// Identifier grouping multiple edits under one logical operation.
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    /// Human-readable description of the operation's intent.
+    #[serde(default)]
+    pub operation_intent: Option<String>,
+    /// Name of the tool invocation that produced this edit (e.g. "Edit", "Write").
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    /// ID of a snapshot to restore from, used by the restore workflow.
+    #[serde(default)]
+    pub restore_id: Option<u64>,
 }
 
 // ─── unit tests ──────────────────────────────────────────────────────────────
@@ -56,6 +76,12 @@ mod tests {
             tool: Some("cursor".to_string()),
             lines_added: 1,
             lines_removed: 1,
+            agent_id: None,
+            agent_label: None,
+            operation_id: None,
+            operation_intent: None,
+            tool_name: None,
+            restore_id: None,
         };
 
         let json = serde_json::to_string(&event).expect("serialize");
@@ -72,6 +98,43 @@ mod tests {
         assert_eq!(restored.tool, Some("cursor".to_string()));
         assert_eq!(restored.lines_added, 1);
         assert_eq!(restored.lines_removed, 1);
+    }
+
+    #[test]
+    fn test_edit_event_v2_fields_serialize() {
+        let event = EditEvent {
+            id: 1,
+            ts: 1_700_000_000_000,
+            file: "src/main.rs".to_string(),
+            kind: EditKind::Modify,
+            patch: "@@ -1 +1 @@\n-old\n+new".to_string(),
+            before_hash: Some("abc".to_string()),
+            after_hash: "def".to_string(),
+            intent: None,
+            tool: None,
+            lines_added: 1,
+            lines_removed: 1,
+            agent_id: Some("12345".to_string()),
+            agent_label: Some("claude-1".to_string()),
+            operation_id: Some("op-7".to_string()),
+            operation_intent: Some("refactor auth".to_string()),
+            tool_name: Some("Edit".to_string()),
+            restore_id: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: EditEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.agent_id, Some("12345".to_string()));
+        assert_eq!(restored.operation_id, Some("op-7".to_string()));
+        assert_eq!(restored.restore_id, None);
+    }
+
+    #[test]
+    fn test_v1_json_deserializes_with_defaults() {
+        let v1_json = r#"{"id":1,"ts":1700000000000,"file":"src/main.rs","kind":"modify","patch":"","before_hash":"abc","after_hash":"def","intent":"fix bug","tool":"cursor","lines_added":1,"lines_removed":1}"#;
+        let event: EditEvent = serde_json::from_str(v1_json).unwrap();
+        assert_eq!(event.agent_id, None);
+        assert_eq!(event.operation_id, None);
+        assert_eq!(event.restore_id, None);
     }
 
     #[test]
