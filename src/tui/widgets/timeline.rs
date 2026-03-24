@@ -55,6 +55,20 @@ impl<'a> TimelineWidget<'a> {
             format!("{:.width$}", base, width = TRACK_NAME_WIDTH)
         }
     }
+
+    /// Look up the agent color for an edit at a given global index.
+    /// Returns None if the edit has no agent_id or the index is out of bounds.
+    fn agent_color_for_edit(&self, edit_idx: usize) -> Option<Color> {
+        let edit = self.app.edits.get(edit_idx)?;
+        let agent_id = edit.agent_id.as_ref()?;
+        let agent_colors = &self.app.theme.agent_colors;
+        if agent_colors.is_empty() {
+            return None;
+        }
+        // Simple hash: sum of bytes mod color count.
+        let hash: usize = agent_id.bytes().map(|b| b as usize).sum();
+        Some(agent_colors[hash % agent_colors.len()])
+    }
 }
 
 impl Widget for TimelineWidget<'_> {
@@ -70,6 +84,7 @@ impl Widget for TimelineWidget<'_> {
         let color_bar_edit: Color = t.bar_filled;
         let color_bar_empty: Color = t.bar_empty;
         let color_playhead: Color = t.accent_warm;
+        let color_detached_playhead: Color = t.accent_purple;
 
         let mut row = area.y;
         let max_y = area.y + area.height;
@@ -99,7 +114,7 @@ impl Widget for TimelineWidget<'_> {
         let name_and_sep = TRACK_NAME_WIDTH + SEPARATOR.len();
         let bar_width = (area.width as usize).saturating_sub(name_and_sep);
 
-        // Empty state — show a subtle waiting indicator instead of nothing.
+        // Empty state -- show a subtle waiting indicator instead of nothing.
         if tracks.is_empty() && row < max_y {
             row += 1; // skip a line
             if row < max_y {
@@ -116,10 +131,16 @@ impl Widget for TimelineWidget<'_> {
                 break;
             }
 
+            let is_detached = self.app.detached_files.contains(&track.filename);
+
             let (name_text, name_color) = if track.stale {
                 let display = Self::display_name(&track.filename);
                 let truncated: String = display.chars().take(TRACK_NAME_WIDTH.min(8)).collect();
                 (format!("{} stale", truncated), color_track_stale)
+            } else if is_detached {
+                // Mark detached tracks with a subtle indicator.
+                let display = Self::display_name(&track.filename);
+                (display, color_detached_playhead)
             } else {
                 (Self::display_name(&track.filename), color_track_name)
             };
@@ -144,7 +165,9 @@ impl Widget for TimelineWidget<'_> {
                     };
                     let has_edit = track.edit_indices.contains(&edit_idx);
                     let (ch, color) = if has_edit {
-                        ("\u{2588}", color_bar_edit) // full block
+                        // Use agent color if the edit has an agent_id.
+                        let agent_col = self.agent_color_for_edit(edit_idx);
+                        ("\u{2588}", agent_col.unwrap_or(color_bar_edit)) // full block
                     } else {
                         ("\u{2591}", color_bar_empty) // light shade
                     };
@@ -173,6 +196,13 @@ impl Widget for TimelineWidget<'_> {
                 0
             };
 
+            // Use accent_purple for the playhead if any file is detached.
+            let ph_color = if self.app.detached_files.is_empty() {
+                color_playhead
+            } else {
+                color_detached_playhead
+            };
+
             let mut ph_spans: Vec<Span> = vec![
                 Span::raw(format!("{:<width$}", "", width = TRACK_NAME_WIDTH)),
                 Span::raw(SEPARATOR),
@@ -180,7 +210,7 @@ impl Widget for TimelineWidget<'_> {
 
             for cell in 0..bar_width {
                 let ch = if cell == playhead_col { "|" } else { "-" };
-                ph_spans.push(Span::styled(ch, Style::default().fg(color_playhead)));
+                ph_spans.push(Span::styled(ch, Style::default().fg(ph_color)));
             }
 
             Line::from(ph_spans).render(
