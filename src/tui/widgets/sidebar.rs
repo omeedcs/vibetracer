@@ -23,7 +23,7 @@ impl Widget for Sidebar<'_> {
     fn render(self, _area: Rect, _buf: &mut Buffer) {
         // The Sidebar widget acts as a dispatch coordinator.
         // Panel-specific rendering is handled by the individual panel widgets
-        // (BlastRadiusPanel, SentinelPanel, WatchdogPanel, RefactorPanel)
+        // (BlastRadiusPanel, SentinelPanel, WatchdogPanel)
         // which are rendered directly by the main render loop.
         //
         // This impl is intentionally a no-op; it exists so the type can be
@@ -38,6 +38,5 @@ pub fn panel_label(panel: &SidebarPanel) -> &'static str {
         SidebarPanel::BlastRadius => "BLAST RADIUS",
         SidebarPanel::Sentinels => "SENTINEL",
         SidebarPanel::Watchdog => "CONSTANT MODIFIED",
-        SidebarPanel::Refactor => "REFACTOR",
     }
 }

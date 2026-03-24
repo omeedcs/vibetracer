@@ -33,8 +33,6 @@ const KEYBINDINGS: &[(&str, &str)] = &[
     ("g", "group by intent"),
     ("b", "toggle blast radius"),
     ("i", "toggle sentinels"),
-    ("d", "toggle schema diff mode"),
-    ("f", "toggle refactor tracker"),
     ("w", "toggle watchdog"),
     ("tab", "cycle focus"),
     ("/", "search"),

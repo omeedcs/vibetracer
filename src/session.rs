@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chrono::Utc;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -34,10 +33,9 @@ impl Session {
     pub fn generate_id() -> String {
         let now = Utc::now();
         let timestamp = now.format("%Y%m%d-%H%M%S").to_string();
-        let mut rng = rand::rng();
-        let hex: u16 = rng.random();
-        let random_hex = format!("{:04x}", hex);
-        format!("{}-{}", timestamp, random_hex)
+        let micros = now.timestamp_micros();
+        let hex_suffix = format!("{:04x}", (micros & 0xFFFF) as u16);
+        format!("{}-{}", timestamp, hex_suffix)
     }
 }
 

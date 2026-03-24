@@ -36,28 +36,6 @@ pub struct EditEvent {
     pub lines_removed: u32,
 }
 
-/// Internal bus events routed between vibetracer components.
-///
-/// Not serializable — these exist only in-process.
-pub enum BusEvent {
-    /// A filesystem edit was detected and recorded.
-    Edit(EditEvent),
-    /// An AI hook enriched a pending edit with tool/intent metadata.
-    HookEnrichment {
-        file: String,
-        tool: String,
-        intent: Option<String>,
-    },
-    /// A checkpoint should be created now.
-    Checkpoint,
-    /// Advance one tick during session playback.
-    PlaybackTick,
-    /// A terminal input event forwarded from crossterm.
-    Input(crossterm::event::Event),
-    /// Signal all components to shut down.
-    Quit,
-}
-
 // ─── unit tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]

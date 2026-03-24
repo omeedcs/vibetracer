@@ -22,8 +22,6 @@ pub enum Action {
     GroupByIntent,
     ToggleBlastRadius,
     ToggleSentinels,
-    ToggleSchemaMode,
-    ToggleRefactorTracker,
     ToggleWatchdog,
     CycleFocus,
     Search,
@@ -55,8 +53,6 @@ pub fn map_key(key: KeyEvent) -> Action {
         (KeyCode::Char('g'), _) => Action::GroupByIntent,
         (KeyCode::Char('b'), _) => Action::ToggleBlastRadius,
         (KeyCode::Char('i'), _) => Action::ToggleSentinels,
-        (KeyCode::Char('d'), _) => Action::ToggleSchemaMode,
-        (KeyCode::Char('f'), _) => Action::ToggleRefactorTracker,
         (KeyCode::Char('w'), _) => Action::ToggleWatchdog,
         (KeyCode::Tab, _) => Action::CycleFocus,
         (KeyCode::Char('/'), _) => Action::Search,
@@ -109,12 +105,6 @@ pub fn apply_action(app: &mut App, action: Action) {
         }
         Action::ToggleSentinels => {
             toggle_sidebar(app, SidebarPanel::Sentinels);
-        }
-        Action::ToggleSchemaMode => {
-            app.schema_diff_mode = !app.schema_diff_mode;
-        }
-        Action::ToggleRefactorTracker => {
-            toggle_sidebar(app, SidebarPanel::Refactor);
         }
         Action::ToggleWatchdog => {
             toggle_sidebar(app, SidebarPanel::Watchdog);

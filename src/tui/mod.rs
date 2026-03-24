@@ -46,7 +46,6 @@ pub enum SidebarPanel {
     BlastRadius,
     Sentinels,
     Watchdog,
-    Refactor,
 }
 
 /// Current playback mode.
@@ -78,8 +77,6 @@ pub struct App {
     pub sidebar_visible: bool,
     pub sidebar_panel: SidebarPanel,
 
-    pub schema_diff_mode: bool,
-
     pub solo_track: Option<String>,
     pub muted_tracks: Vec<String>,
 
@@ -110,8 +107,6 @@ impl App {
             focused_pane: Pane::Timeline,
             sidebar_visible: false,
             sidebar_panel: SidebarPanel::BlastRadius,
-
-            schema_diff_mode: false,
 
             solo_track: None,
             muted_tracks: Vec::new(),
@@ -347,9 +342,6 @@ pub fn run_tui_with_options(
                         widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts)
                             .render(sidebar_rect, buf);
                     }
-                    SidebarPanel::Refactor => {
-                        widgets::refactor_panel::RefactorPanel::new(None).render(sidebar_rect, buf);
-                    }
                 }
             }
 
@@ -366,12 +358,6 @@ pub fn run_tui_with_options(
                 Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
                 Span::styled("i", Style::default().fg(Color::Rgb(138, 143, 152))),
                 Span::styled(" sentinels", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("d", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" schema diff", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("f", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" refactor", Style::default().fg(COLOR_MUTED)),
                 Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
                 Span::styled("w", Style::default().fg(Color::Rgb(138, 143, 152))),
                 Span::styled(" watchdog", Style::default().fg(COLOR_MUTED)),

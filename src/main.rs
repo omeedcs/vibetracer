@@ -17,10 +17,6 @@ struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
 
-    /// Skip the startup animation
-    #[arg(long)]
-    no_splash: bool,
-
     /// Write debug log to .vibetracer/debug.log
     #[arg(long)]
     debug: bool,
@@ -42,8 +38,6 @@ enum Commands {
         /// Session ID or path to JSONL file (lists available sessions if omitted)
         session: Option<String>,
     },
-    /// Run a scripted demo session (for recording GIFs)
-    Demo,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -226,17 +220,8 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        // ── Demo: run scripted demo session ───────────────────────────────────
-        Some(Commands::Demo) => {
-            vibetracer::demo::run_demo()?;
-        }
-
         // ── Default: run live TUI ──────────────────────────────────────────────
         None => {
-            if !cli.no_splash {
-                vibetracer::splash::play_splash()?;
-            }
-
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
 
