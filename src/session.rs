@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::event::AgentInfo;
+
 /// The operating mode for a session.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +21,8 @@ pub struct SessionMeta {
     pub project_path: String,
     pub started_at: i64,
     pub mode: SessionMode,
+    #[serde(default)]
+    pub agents: Vec<AgentInfo>,
 }
 
 /// A handle to an active or created session on disk.
@@ -63,6 +67,7 @@ impl SessionManager {
             project_path: String::new(),
             started_at: Utc::now().timestamp(),
             mode: SessionMode::Enriched,
+            agents: Vec::new(),
         };
 
         let meta_path = dir.join("meta.json");
@@ -100,5 +105,19 @@ impl SessionManager {
         let content = fs::read_to_string(&meta_path)?;
         let meta: SessionMeta = serde_json::from_str(&content)?;
         Ok(meta)
+    }
+}
+
+// ─── unit tests ──────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_v1_meta_deserializes_with_empty_agents() {
+        let v1_json = r#"{"id":"test-123","project_path":"/tmp","started_at":0,"mode":"passive"}"#;
+        let meta: SessionMeta = serde_json::from_str(v1_json).unwrap();
+        assert!(meta.agents.is_empty());
     }
 }

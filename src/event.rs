@@ -56,6 +56,39 @@ pub struct EditEvent {
     pub restore_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreEvent {
+    pub id: u64,
+    pub ts: i64,
+    pub scope: RestoreScope,
+    pub files_restored: Vec<RestoreFileEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreFileEntry {
+    pub path: String,
+    pub from_hash: String,
+    pub to_hash: String, // empty string = file was deleted
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RestoreScope {
+    File { path: String, target_edit_id: u64 },
+    Operation { operation_id: String },
+    AgentRange { agent_id: String, from_ts: i64, to_ts: i64 },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub agent_id: String,
+    pub agent_label: String,
+    pub tool_type: String,
+    pub first_seen: i64,
+    pub last_seen: i64,
+    pub edit_count: u64,
+}
+
 // ─── unit tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -170,5 +203,60 @@ mod tests {
             serde_json::to_string(&EditKind::Delete).unwrap(),
             "\"delete\""
         );
+    }
+
+    #[test]
+    fn test_restore_event_serialization() {
+        let event = RestoreEvent {
+            id: 1,
+            ts: 1_700_000_000_000,
+            scope: RestoreScope::File {
+                path: "src/main.rs".to_string(),
+                target_edit_id: 42,
+            },
+            files_restored: vec![RestoreFileEntry {
+                path: "src/main.rs".to_string(),
+                from_hash: "abc".to_string(),
+                to_hash: "def".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: RestoreEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.id, 1);
+        match restored.scope {
+            RestoreScope::File { target_edit_id, .. } => assert_eq!(target_edit_id, 42),
+            _ => panic!("wrong scope"),
+        }
+    }
+
+    #[test]
+    fn test_restore_scope_variants() {
+        let op = RestoreScope::Operation { operation_id: "op-1".to_string() };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"operation\""));
+
+        let range = RestoreScope::AgentRange {
+            agent_id: "a1".to_string(),
+            from_ts: 1000,
+            to_ts: 2000,
+        };
+        let json = serde_json::to_string(&range).unwrap();
+        assert!(json.contains("\"type\":\"agent_range\""));
+    }
+
+    #[test]
+    fn test_agent_info_serialization() {
+        let info = AgentInfo {
+            agent_id: "pid-123".to_string(),
+            agent_label: "claude-1".to_string(),
+            tool_type: "claude-code".to_string(),
+            first_seen: 1000,
+            last_seen: 2000,
+            edit_count: 5,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let restored: AgentInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.agent_label, "claude-1");
+        assert_eq!(restored.edit_count, 5);
     }
 }
