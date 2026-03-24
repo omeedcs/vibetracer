@@ -1,105 +1,181 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::tui::{App, Pane, PlaybackState, SidebarPanel};
+use crate::theme::Theme;
+use crate::tui::{App, Pane, SidebarPanel};
 
 /// All actions that a keypress can trigger.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Quit,
+    QuitAndStopDaemon,
+    Help,
     TogglePlay,
     ScrubLeft,
     ScrubRight,
-    JumpPrevCheckpoint,
-    JumpNextCheckpoint,
-    SetSpeed(u8),
-    Rewind,
-    RewindFile,
-    UndoRewind,
-    CutRange,
+    FileScrubLeft,
+    FileScrubRight,
+    Reattach,
+    ToggleCommandView,
+    Restore,
+    UndoRestore,
     Checkpoint,
+    ToggleRestoreEdits,
     SoloTrack,
     MuteTrack,
-    GroupByIntent,
     ToggleBlastRadius,
     ToggleSentinels,
     ToggleWatchdog,
+    CycleTheme,
     CycleFocus,
-    Search,
-    Help,
-    None,
+    SoloAgent(u8),
+    Noop,
 }
 
 /// Map a crossterm `KeyEvent` to an `Action`.
 pub fn map_key(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('q'), _) => Action::Quit,
-        (KeyCode::Char(' '), _) => Action::TogglePlay,
-        (KeyCode::Left, KeyModifiers::SHIFT) => Action::JumpPrevCheckpoint,
-        (KeyCode::Right, KeyModifiers::SHIFT) => Action::JumpNextCheckpoint,
-        (KeyCode::Left, _) => Action::ScrubLeft,
-        (KeyCode::Right, _) => Action::ScrubRight,
-        (KeyCode::Char('1'), _) => Action::SetSpeed(1),
-        (KeyCode::Char('2'), _) => Action::SetSpeed(2),
-        (KeyCode::Char('3'), _) => Action::SetSpeed(3),
-        (KeyCode::Char('4'), _) => Action::SetSpeed(4),
-        (KeyCode::Char('5'), _) => Action::SetSpeed(5),
-        (KeyCode::Char('r'), KeyModifiers::NONE) => Action::Rewind,
-        (KeyCode::Char('R'), _) => Action::RewindFile,
-        (KeyCode::Char('u'), _) => Action::UndoRewind,
-        (KeyCode::Char('x'), _) => Action::CutRange,
-        (KeyCode::Char('c'), _) => Action::Checkpoint,
-        (KeyCode::Char('s'), _) => Action::SoloTrack,
-        (KeyCode::Char('m'), _) => Action::MuteTrack,
-        (KeyCode::Char('g'), _) => Action::GroupByIntent,
-        (KeyCode::Char('b'), _) => Action::ToggleBlastRadius,
-        (KeyCode::Char('i'), _) => Action::ToggleSentinels,
-        (KeyCode::Char('w'), _) => Action::ToggleWatchdog,
-        (KeyCode::Tab, _) => Action::CycleFocus,
-        (KeyCode::Char('/'), _) => Action::Search,
+        // Quit
+        (KeyCode::Char('q'), KeyModifiers::NONE) => Action::Quit,
+        (KeyCode::Char('Q'), _) => Action::QuitAndStopDaemon,
+
+        // Help
         (KeyCode::Char('?'), _) => Action::Help,
-        _ => Action::None,
+
+        // Playback
+        (KeyCode::Char(' '), _) => Action::TogglePlay,
+
+        // Global scrub
+        (KeyCode::Left, m) if !m.contains(KeyModifiers::SHIFT) => Action::ScrubLeft,
+        (KeyCode::Right, m) if !m.contains(KeyModifiers::SHIFT) => Action::ScrubRight,
+
+        // Per-file scrub
+        (KeyCode::Left, m) if m.contains(KeyModifiers::SHIFT) => Action::FileScrubLeft,
+        (KeyCode::Right, m) if m.contains(KeyModifiers::SHIFT) => Action::FileScrubRight,
+
+        // Reattach detached file to global playhead
+        (KeyCode::Char('a'), KeyModifiers::NONE) => Action::Reattach,
+
+        // Toggle command/operation view
+        (KeyCode::Char('g'), KeyModifiers::NONE) => Action::ToggleCommandView,
+
+        // Restore (Shift+R)
+        (KeyCode::Char('R'), _) => Action::Restore,
+
+        // Undo restore
+        (KeyCode::Char('u'), KeyModifiers::NONE) => Action::UndoRestore,
+
+        // Checkpoint
+        (KeyCode::Char('c'), KeyModifiers::NONE) => Action::Checkpoint,
+
+        // Toggle showing restore-generated edits
+        (KeyCode::Char('x'), KeyModifiers::NONE) => Action::ToggleRestoreEdits,
+
+        // Track solo/mute
+        (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SoloTrack,
+        (KeyCode::Char('m'), KeyModifiers::NONE) => Action::MuteTrack,
+
+        // Sidebar panel toggles
+        (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ToggleBlastRadius,
+        (KeyCode::Char('i'), KeyModifiers::NONE) => Action::ToggleSentinels,
+        (KeyCode::Char('w'), KeyModifiers::NONE) => Action::ToggleWatchdog,
+
+        // Theme cycling
+        (KeyCode::Char('t'), KeyModifiers::NONE) => Action::CycleTheme,
+
+        // Focus cycling
+        (KeyCode::Tab, _) => Action::CycleFocus,
+
+        // Solo agent (1-9)
+        (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
+            Action::SoloAgent(c as u8 - b'0')
+        }
+
+        _ => Action::Noop,
     }
 }
 
 /// Apply an `Action` to the `App` state.
 ///
-/// Some actions (Checkpoint, Rewind, RewindFile, UndoRewind, CutRange, SoloTrack,
-/// MuteTrack, GroupByIntent, Search, Help) require external coordination and are
-/// intentional no-ops here; the caller handles them.
+/// Some actions (Checkpoint, Restore, UndoRestore, Help) require external
+/// coordination and are intentional no-ops here; the caller handles them.
 pub fn apply_action(app: &mut App, action: Action) {
     match action {
-        Action::Quit => app.should_quit = true,
+        Action::Quit | Action::QuitAndStopDaemon => app.should_quit = true,
         Action::TogglePlay => app.toggle_play(),
         Action::ScrubLeft => app.scrub_left(),
         Action::ScrubRight => app.scrub_right(),
 
-        Action::JumpPrevCheckpoint => {
-            // Jump to the nearest checkpoint whose index is less than the current playhead.
-            if let Some(&target) = app
-                .checkpoint_ids
-                .iter()
-                .rev()
-                .find(|&&id| (id as usize) < app.playhead)
-            {
-                app.playhead = target as usize;
-                app.playback = PlaybackState::Paused;
+        // Per-file scrub: detach the current file's track and scrub it.
+        Action::FileScrubLeft => {
+            if let Some(edit) = app.current_edit() {
+                let file = edit.file.clone();
+                if !app.detached_files.contains(&file) {
+                    // Auto-detach at the current per-file position
+                    let pos = app
+                        .file_playheads
+                        .get(&file)
+                        .copied()
+                        .unwrap_or(0);
+                    app.detached_files.insert(file.clone());
+                    app.file_playheads.insert(file.clone(), pos);
+                }
+                let pos = app.file_playheads.get(&file).copied().unwrap_or(0);
+                if pos > 0 {
+                    app.file_playheads.insert(file, pos - 1);
+                }
             }
         }
-        Action::JumpNextCheckpoint => {
-            // Jump to the nearest checkpoint whose index is greater than the current playhead.
-            if let Some(&target) = app
-                .checkpoint_ids
-                .iter()
-                .find(|&&id| (id as usize) > app.playhead)
-            {
-                app.playhead = target as usize;
-                app.playback = PlaybackState::Paused;
+        Action::FileScrubRight => {
+            if let Some(edit) = app.current_edit() {
+                let file = edit.file.clone();
+                if !app.detached_files.contains(&file) {
+                    let pos = app
+                        .file_playheads
+                        .get(&file)
+                        .copied()
+                        .unwrap_or(0);
+                    app.detached_files.insert(file.clone());
+                    app.file_playheads.insert(file.clone(), pos);
+                }
+                let pos = app.file_playheads.get(&file).copied().unwrap_or(0);
+                app.file_playheads.insert(file, pos + 1);
             }
         }
 
-        Action::SetSpeed(s) => app.set_speed(s),
+        // Reattach: snap the current file back to the global playhead.
+        Action::Reattach => {
+            if let Some(edit) = app.current_edit() {
+                let file = edit.file.clone();
+                app.detached_files.remove(&file);
+                app.file_playheads.remove(&file);
+            }
+        }
 
-        // Sidebar panel toggles — pressing the same key again closes the sidebar.
+        // Toggle command/operation view
+        Action::ToggleCommandView => {
+            app.command_view = !app.command_view;
+        }
+
+        // Toggle showing restore-generated edits
+        Action::ToggleRestoreEdits => {
+            app.show_restore_edits = !app.show_restore_edits;
+        }
+
+        // Cycle through theme presets
+        Action::CycleTheme => {
+            let presets = Theme::preset_names();
+            let current_idx = presets
+                .iter()
+                .position(|&n| n == app.theme_name)
+                .unwrap_or(0);
+            let next_idx = (current_idx + 1) % presets.len();
+            let next_name = presets[next_idx];
+            app.theme = Theme::from_preset(next_name);
+            app.theme_name = next_name.to_string();
+            app.theme_flash = Some(std::time::Instant::now());
+        }
+
+        // Sidebar panel toggles -- pressing the same key again closes the sidebar.
         Action::ToggleBlastRadius => {
             toggle_sidebar(app, SidebarPanel::BlastRadius);
         }
@@ -124,18 +200,42 @@ pub fn apply_action(app: &mut App, action: Action) {
             };
         }
 
+        // Solo track: toggle solo on the file of the current edit.
+        Action::SoloTrack => {
+            if let Some(edit) = app.current_edit() {
+                let file = edit.file.clone();
+                if app.solo_track.as_ref() == Some(&file) {
+                    app.solo_track = None;
+                } else {
+                    app.solo_track = Some(file);
+                }
+            }
+        }
+
+        // Mute track: toggle mute on the file of the current edit.
+        Action::MuteTrack => {
+            if let Some(edit) = app.current_edit() {
+                let file = edit.file.clone();
+                if let Some(pos) = app.muted_tracks.iter().position(|f| f == &file) {
+                    app.muted_tracks.remove(pos);
+                } else {
+                    app.muted_tracks.push(file);
+                }
+            }
+        }
+
+        // Solo agent: filter timeline to only show edits from agent N.
+        // (Stored as solo_track with a special prefix so the timeline can distinguish)
+        Action::SoloAgent(_n) => {
+            // Implementation deferred to integration phase -- sets a flag on App.
+        }
+
         // These actions require external handling; nothing to do in the state machine.
-        Action::Rewind
-        | Action::RewindFile
-        | Action::UndoRewind
-        | Action::CutRange
+        Action::Restore
+        | Action::UndoRestore
         | Action::Checkpoint
-        | Action::SoloTrack
-        | Action::MuteTrack
-        | Action::GroupByIntent
-        | Action::Search
         | Action::Help
-        | Action::None => {}
+        | Action::Noop => {}
     }
 }
 

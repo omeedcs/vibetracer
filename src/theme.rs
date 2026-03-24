@@ -518,6 +518,33 @@ impl Theme {
     }
 }
 
+impl Theme {
+    /// Return the ordered list of all preset names available for cycling.
+    pub fn preset_names() -> &'static [&'static str] {
+        &[
+            "dark",
+            "catppuccin-mocha",
+            "catppuccin-macchiato",
+            "gruvbox-dark",
+            "tokyo-night",
+            "tokyo-night-storm",
+            "dracula",
+            "nord",
+            "kanagawa",
+            "rose-pine",
+            "one-dark",
+            "solarized-dark",
+            "everforest-dark",
+            "light",
+            "catppuccin-latte",
+            "gruvbox-light",
+            "solarized-light",
+            "rose-pine-dawn",
+            "everforest-light",
+        ]
+    }
+}
+
 impl Default for Theme {
     fn default() -> Self {
         Self::dark()
