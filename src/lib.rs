@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod auto_detect;
 pub mod config;
+pub mod daemon;
 pub mod event;
 pub mod hook;
 pub mod import;
