@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use tempfile::tempdir;
 use vibetracer::event::{EditEvent, EditKind};
-use vibetracer::snapshot::checkpoint::CheckpointManager;
+use vibetracer::checkpoint::CheckpointManager;
 use vibetracer::snapshot::edit_log::EditLog;
 use vibetracer::snapshot::store::SnapshotStore;
 

@@ -11,7 +11,7 @@ pub use app::*;
 use crate::config::Config;
 use crate::recorder::Recorder;
 use crate::session::SessionManager;
-use crate::snapshot::checkpoint::CheckpointManager;
+use crate::checkpoint::CheckpointManager;
 use crate::theme::Theme;
 use crate::watcher::fs_watcher::FsWatcher;
 use anyhow::Result;

@@ -4,7 +4,7 @@ use crate::analysis::watchdog::Watchdog;
 use crate::config::Config;
 use crate::event::EditEvent;
 use crate::recorder::Recorder;
-use crate::snapshot::checkpoint::CheckpointManager;
+use crate::checkpoint::CheckpointManager;
 use crate::tui::{App, SidebarPanel, input, layout, widgets};
 use anyhow::Result;
 use crossterm::event::{self as ct_event, Event, KeyEventKind};
