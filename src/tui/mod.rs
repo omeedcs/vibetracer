@@ -1,6 +1,7 @@
 pub mod app;
 pub mod input;
 pub mod layout;
+pub mod playhead;
 pub mod widgets;
 
 pub use app::*;
