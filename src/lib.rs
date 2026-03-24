@@ -8,6 +8,7 @@ pub mod event;
 pub mod hook;
 pub mod import;
 pub mod recorder;
+pub mod restore;
 pub mod session;
 pub mod snapshot;
 pub mod theme;
