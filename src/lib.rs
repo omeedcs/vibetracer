@@ -6,6 +6,7 @@ pub mod config;
 pub mod event;
 pub mod hook;
 pub mod import;
+pub mod recorder;
 pub mod session;
 pub mod snapshot;
 pub mod theme;
