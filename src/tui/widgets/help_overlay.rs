@@ -10,32 +10,44 @@ const COLOR_KEY: Color = Color::Rgb(90, 101, 119);
 const COLOR_DESC: Color = Color::Rgb(160, 168, 183);
 const COLOR_BG: Color = Color::Rgb(15, 17, 21);
 const COLOR_BORDER: Color = Color::Rgb(30, 34, 42);
+const COLOR_SECTION: Color = Color::Rgb(138, 117, 96);
 
-const MAX_WIDTH: u16 = 50;
-const MAX_HEIGHT: u16 = 24;
+const MAX_WIDTH: u16 = 52;
+const MAX_HEIGHT: u16 = 30;
 
 /// All keybinding entries: (key, description).
+/// Empty key + description = section header.
 const KEYBINDINGS: &[(&str, &str)] = &[
-    ("q", "quit"),
+    // ── playback ──
+    ("", "-- playback --"),
     ("space", "toggle play / pause"),
-    ("left", "scrub backward"),
-    ("right", "scrub forward"),
-    ("shift+left", "jump to previous checkpoint"),
-    ("shift+right", "jump to next checkpoint"),
-    ("1-5", "set playback speed"),
-    ("r", "rewind to start"),
-    ("R", "rewind file to last checkpoint"),
-    ("u", "undo last rewind"),
-    ("x", "cut range"),
+    ("left / right", "scrub timeline"),
+    ("shift+left", "scrub file backward"),
+    ("shift+right", "scrub file forward"),
+    ("a", "reattach file to global"),
+    // ── editing ──
+    ("", "-- actions --"),
+    ("R", "restore file to playhead"),
+    ("u", "undo last restore"),
     ("c", "create checkpoint"),
-    ("s", "solo selected track"),
-    ("m", "mute selected track"),
-    ("g", "group by intent"),
+    ("x", "toggle restore edits"),
+    // ── view ──
+    ("", "-- view --"),
+    ("g", "toggle command view"),
+    ("s", "solo track"),
+    ("m", "mute track"),
+    ("1-9", "solo agent N"),
+    ("t", "cycle theme"),
+    // ── panels ──
+    ("", "-- panels --"),
     ("b", "toggle blast radius"),
     ("i", "toggle sentinels"),
     ("w", "toggle watchdog"),
     ("tab", "cycle focus"),
-    ("/", "search"),
+    // ── meta ──
+    ("", "-- meta --"),
+    ("q", "quit"),
+    ("Q", "quit and stop daemon"),
     ("?", "show this help"),
 ];
 
@@ -86,16 +98,25 @@ impl Widget for HelpOverlay {
                 height: 1,
             };
 
-            // Right-align key in the first column.
-            let key_str = format!("{:>width$}", key, width = key_col_width as usize);
+            if key.is_empty() {
+                // Section header
+                let line = Line::from(vec![
+                    Span::raw(format!("{:width$}", "", width = (key_col_width + gap) as usize)),
+                    Span::styled(*desc, Style::default().fg(COLOR_SECTION)),
+                ]);
+                line.render(row_area, buf);
+            } else {
+                // Right-align key in the first column.
+                let key_str = format!("{:>width$}", key, width = key_col_width as usize);
 
-            let line = Line::from(vec![
-                Span::styled(key_str, Style::default().fg(COLOR_KEY)),
-                Span::raw(format!("{:width$}", "", width = gap as usize)),
-                Span::styled(*desc, Style::default().fg(COLOR_DESC)),
-            ]);
+                let line = Line::from(vec![
+                    Span::styled(key_str, Style::default().fg(COLOR_KEY)),
+                    Span::raw(format!("{:width$}", "", width = gap as usize)),
+                    Span::styled(*desc, Style::default().fg(COLOR_DESC)),
+                ]);
 
-            line.render(row_area, buf);
+                line.render(row_area, buf);
+            }
         }
     }
 }

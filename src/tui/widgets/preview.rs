@@ -162,9 +162,10 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
         ("", ""),
         ("left/right", "scrub through edits"),
         ("Space", "play / pause replay"),
-        ("r", "rewind to playhead"),
+        ("R", "restore to playhead"),
         ("c", "create checkpoint"),
-        ("b i w f e", "toggle analysis panels"),
+        ("g", "toggle command view"),
+        ("t", "cycle theme"),
         ("?", "all keybindings"),
     ];
 

@@ -8,6 +8,9 @@ use ratatui::{
 
 use crate::tui::{App, PlaybackState};
 
+/// Duration (in seconds) to flash the theme name after a theme change.
+const THEME_FLASH_SECS: u64 = 2;
+
 /// A single-line status bar widget.
 pub struct StatusBar<'a> {
     pub app: &'a App,
@@ -30,6 +33,21 @@ impl<'a> StatusBar<'a> {
             format!("{m}m{s:02}s")
         }
     }
+
+    /// Return the agent label for the current edit, if any.
+    fn current_agent_label(&self) -> Option<&str> {
+        self.app
+            .current_edit()
+            .and_then(|e| e.agent_label.as_deref())
+    }
+
+    /// Whether the theme flash is currently active (within THEME_FLASH_SECS).
+    fn theme_flash_active(&self) -> bool {
+        self.app
+            .theme_flash
+            .map(|t| t.elapsed().as_secs() < THEME_FLASH_SECS)
+            .unwrap_or(false)
+    }
 }
 
 impl Widget for StatusBar<'_> {
@@ -44,6 +62,7 @@ impl Widget for StatusBar<'_> {
         let color_live: Color = t.accent_green;
         let color_paused: Color = t.fg_muted;
         let color_speed: Color = t.accent_purple;
+        let color_accent: Color = t.accent_warm;
 
         let sep = Span::styled(" | ", Style::default().fg(color_separator));
 
@@ -52,7 +71,7 @@ impl Widget for StatusBar<'_> {
         let edit_count = self.app.edits.len();
         let ckpt_count = self.app.checkpoint_ids.len();
 
-        let left_spans = vec![
+        let mut left_spans = vec![
             Span::styled("vibetracer", Style::default().fg(color_default)),
             sep.clone(),
             Span::styled(elapsed, Style::default().fg(color_value)),
@@ -67,6 +86,24 @@ impl Widget for StatusBar<'_> {
                 Style::default().fg(color_value),
             ),
         ];
+
+        // Command view indicator
+        if self.app.command_view {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled(
+                "commands",
+                Style::default().fg(color_accent),
+            ));
+        }
+
+        // Agent label for current edit
+        if let Some(agent) = self.current_agent_label() {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled(
+                agent.to_string(),
+                Style::default().fg(color_accent),
+            ));
+        }
 
         // ── right side ───────────────────────────────────────────────────────
         let (conn_text, conn_color) = if self.app.connected {
@@ -84,10 +121,19 @@ impl Widget for StatusBar<'_> {
             }
         };
 
-        let mut right_spans: Vec<Span> = vec![
-            Span::styled(conn_text, Style::default().fg(conn_color)),
-            sep.clone(),
-        ];
+        let mut right_spans: Vec<Span> = Vec::new();
+
+        // Theme name flash (shown for 2s after theme change)
+        if self.theme_flash_active() {
+            right_spans.push(Span::styled(
+                self.app.theme_name.as_str(),
+                Style::default().fg(color_accent),
+            ));
+            right_spans.push(sep.clone());
+        }
+
+        right_spans.push(Span::styled(conn_text, Style::default().fg(conn_color)));
+        right_spans.push(sep.clone());
 
         match &self.app.playback {
             PlaybackState::Playing { speed } => {
