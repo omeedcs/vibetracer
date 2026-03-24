@@ -20,7 +20,6 @@ pub enum Action {
     SoloTrack,
     MuteTrack,
     GroupByIntent,
-    ToggleEquationLens,
     ToggleBlastRadius,
     ToggleSentinels,
     ToggleSchemaMode,
@@ -55,7 +54,6 @@ pub fn map_key(key: KeyEvent) -> Action {
         (KeyCode::Char('s'), _) => Action::SoloTrack,
         (KeyCode::Char('m'), _) => Action::MuteTrack,
         (KeyCode::Char('g'), _) => Action::GroupByIntent,
-        (KeyCode::Char('e'), _) => Action::ToggleEquationLens,
         (KeyCode::Char('b'), _) => Action::ToggleBlastRadius,
         (KeyCode::Char('i'), _) => Action::ToggleSentinels,
         (KeyCode::Char('d'), _) => Action::ToggleSchemaMode,
@@ -109,10 +107,6 @@ pub fn apply_action(app: &mut App, action: Action) {
         Action::SetSpeed(s) => app.set_speed(s),
 
         // Sidebar panel toggles — pressing the same key again closes the sidebar.
-        Action::ToggleEquationLens => {
-            app.equation_lens = !app.equation_lens;
-            toggle_sidebar(app, SidebarPanel::Equations);
-        }
         Action::ToggleBlastRadius => {
             toggle_sidebar(app, SidebarPanel::BlastRadius);
         }

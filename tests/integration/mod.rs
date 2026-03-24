@@ -1,6 +1,5 @@
 pub mod blast_radius_test;
 pub mod config_test;
-pub mod equation_test;
 pub mod hook_test;
 pub mod import_test;
 pub mod refactor_tracker_test;

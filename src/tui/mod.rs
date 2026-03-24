@@ -6,7 +6,6 @@ use crate::analysis::blast_radius::{BlastRadiusTracker, DependencyStatus};
 use crate::analysis::sentinels::{SentinelEngine, SentinelViolation};
 use crate::analysis::watchdog::{Watchdog, WatchdogAlert};
 use crate::config::Config;
-use crate::equation::detect::{self as eq_detect, DetectedEquation};
 use crate::event::{EditEvent, EditKind};
 use crate::pty::EmbeddedTerminal;
 use crate::session::SessionManager;
@@ -50,7 +49,6 @@ pub enum SidebarPanel {
     Sentinels,
     Watchdog,
     Refactor,
-    Equations,
 }
 
 /// Current playback mode.
@@ -82,7 +80,6 @@ pub struct App {
     pub sidebar_visible: bool,
     pub sidebar_panel: SidebarPanel,
 
-    pub equation_lens: bool,
     pub schema_diff_mode: bool,
 
     pub solo_track: Option<String>,
@@ -105,7 +102,6 @@ pub struct App {
     pub watchdog_alerts: Vec<WatchdogAlert>,
     pub sentinel_violations: Vec<SentinelViolation>,
     pub blast_radius_status: Option<(String, DependencyStatus)>,
-    pub equations: Vec<DetectedEquation>,
 
     // Color theme
     pub theme: Theme,
@@ -123,7 +119,6 @@ impl App {
             sidebar_visible: false,
             sidebar_panel: SidebarPanel::BlastRadius,
 
-            equation_lens: false,
             schema_diff_mode: false,
 
             solo_track: None,
@@ -144,7 +139,6 @@ impl App {
             watchdog_alerts: Vec::new(),
             sentinel_violations: Vec::new(),
             blast_radius_status: None,
-            equations: Vec::new(),
 
             theme: Theme::dark(),
         }
@@ -403,10 +397,6 @@ pub fn run_tui_with_options(
                     SidebarPanel::Refactor => {
                         widgets::refactor_panel::RefactorPanel::new(None).render(sidebar_rect, buf);
                     }
-                    SidebarPanel::Equations => {
-                        widgets::equation_panel::EquationPanel::new(&app.equations, None)
-                            .render(sidebar_rect, buf);
-                    }
                 }
             }
 
@@ -429,9 +419,6 @@ pub fn run_tui_with_options(
                 Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
                 Span::styled("f", Style::default().fg(Color::Rgb(138, 143, 152))),
                 Span::styled(" refactor", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("e", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" equations", Style::default().fg(COLOR_MUTED)),
                 Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
                 Span::styled("w", Style::default().fg(Color::Rgb(138, 143, 152))),
                 Span::styled(" watchdog", Style::default().fg(COLOR_MUTED)),
@@ -497,32 +484,6 @@ pub fn run_tui_with_options(
                                 let id = checkpoint_manager.save(current_file_hashes.clone())?;
                                 app.checkpoint_ids.push(id);
                                 edits_since_checkpoint = 0;
-                            }
-
-                            input::Action::ToggleEquationLens => {
-                                input::apply_action(&mut app, input::Action::ToggleEquationLens);
-                                // Scan the current file for equations immediately.
-                                if app.equation_lens {
-                                    if let Some(edit) = app.current_edit() {
-                                        let file_path = project_path.join(&edit.file);
-                                        if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                            app.equations = eq_detect::extract_equations(&content);
-                                        }
-                                    }
-                                }
-                            }
-
-                            input::Action::ScrubLeft | input::Action::ScrubRight => {
-                                input::apply_action(&mut app, action);
-                                // Rescan equations if lens is on after scrubbing.
-                                if app.equation_lens {
-                                    if let Some(edit) = app.current_edit() {
-                                        let file_path = project_path.join(&edit.file);
-                                        if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                            app.equations = eq_detect::extract_equations(&content);
-                                        }
-                                    }
-                                }
                             }
 
                             other => {
@@ -640,11 +601,6 @@ pub fn run_tui_with_options(
                         app.blast_radius_status = Some((rel_path.clone(), status));
                         app.sidebar_visible = true;
                         app.sidebar_panel = SidebarPanel::BlastRadius;
-                    }
-
-                    // Equations: if equation lens is on, detect equations.
-                    if app.equation_lens {
-                        app.equations = eq_detect::extract_equations(&new_content);
                     }
 
                     edits_since_checkpoint += 1;

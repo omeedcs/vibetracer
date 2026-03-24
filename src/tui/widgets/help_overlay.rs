@@ -31,7 +31,6 @@ const KEYBINDINGS: &[(&str, &str)] = &[
     ("s", "solo selected track"),
     ("m", "mute selected track"),
     ("g", "group by intent"),
-    ("e", "toggle equation lens"),
     ("b", "toggle blast radius"),
     ("i", "toggle sentinels"),
     ("d", "toggle schema diff mode"),

@@ -1,5 +1,4 @@
 pub mod blast_radius_panel;
-pub mod equation_panel;
 pub mod help_overlay;
 pub mod preview;
 pub mod refactor_panel;
