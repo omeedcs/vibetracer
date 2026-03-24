@@ -1,6 +1,7 @@
 pub mod blast_radius_panel;
 pub mod help_overlay;
 pub mod preview;
+pub mod restore_confirm;
 pub mod sentinel_panel;
 pub mod sidebar;
 pub mod status_bar;
