@@ -17,14 +17,6 @@ struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
 
-    /// Run a command embedded in a pane (default: claude)
-    #[arg(long, short = 'e')]
-    embed: bool,
-
-    /// Command to embed (used with --embed, defaults to "claude")
-    #[arg(long, default_value = "claude")]
-    cmd: String,
-
     /// Skip the startup animation
     #[arg(long)]
     no_splash: bool,
@@ -248,14 +240,7 @@ fn main() -> anyhow::Result<()> {
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
 
-            let options = if cli.embed {
-                RunOptions {
-                    embed_command: Some(cli.cmd.clone()),
-                    ..Default::default()
-                }
-            } else {
-                RunOptions::default()
-            };
+            let options = RunOptions::default();
 
             if cli.debug {
                 let log_path = project_path.join(".vibetracer").join("debug.log");

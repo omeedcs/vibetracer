@@ -5,6 +5,5 @@ pub mod refactor_panel;
 pub mod sentinel_panel;
 pub mod sidebar;
 pub mod status_bar;
-pub mod terminal_pane;
 pub mod timeline;
 pub mod watchdog_panel;

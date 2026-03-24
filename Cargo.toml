@@ -27,8 +27,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1"
 dirs = "6"
-portable-pty = "0.8"
-vt100 = "0.15"
 
 [dev-dependencies]
 tempfile = "3"

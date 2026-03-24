@@ -26,7 +26,6 @@ pub enum Action {
     ToggleRefactorTracker,
     ToggleWatchdog,
     CycleFocus,
-    ToggleTerminalFocus,
     Search,
     Help,
     None,
@@ -60,8 +59,6 @@ pub fn map_key(key: KeyEvent) -> Action {
         (KeyCode::Char('f'), _) => Action::ToggleRefactorTracker,
         (KeyCode::Char('w'), _) => Action::ToggleWatchdog,
         (KeyCode::Tab, _) => Action::CycleFocus,
-        // Ctrl+\ toggles between terminal focus and vibetracer panes
-        (KeyCode::Char('\\'), KeyModifiers::CONTROL) => Action::ToggleTerminalFocus,
         (KeyCode::Char('/'), _) => Action::Search,
         (KeyCode::Char('?'), _) => Action::Help,
         _ => Action::None,
@@ -127,15 +124,6 @@ pub fn apply_action(app: &mut App, action: Action) {
             app.focused_pane = match &app.focused_pane {
                 Pane::Preview => Pane::Timeline,
                 Pane::Timeline => {
-                    if app.terminal_visible {
-                        Pane::TerminalPane
-                    } else if app.sidebar_visible {
-                        Pane::Sidebar
-                    } else {
-                        Pane::Preview
-                    }
-                }
-                Pane::TerminalPane => {
                     if app.sidebar_visible {
                         Pane::Sidebar
                     } else {
@@ -144,16 +132,6 @@ pub fn apply_action(app: &mut App, action: Action) {
                 }
                 Pane::Sidebar => Pane::Preview,
             };
-        }
-
-        Action::ToggleTerminalFocus => {
-            if app.focused_pane == Pane::TerminalPane {
-                // Return to the last vibetracer pane
-                app.focused_pane = app.last_vibetracer_pane.clone().unwrap_or(Pane::Preview);
-            } else if app.terminal_visible {
-                app.last_vibetracer_pane = Some(app.focused_pane.clone());
-                app.focused_pane = Pane::TerminalPane;
-            }
         }
 
         // These actions require external handling; nothing to do in the state machine.
