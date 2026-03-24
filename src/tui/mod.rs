@@ -6,11 +6,12 @@ use crate::analysis::blast_radius::{BlastRadiusTracker, DependencyStatus};
 use crate::analysis::sentinels::{SentinelEngine, SentinelViolation};
 use crate::analysis::watchdog::{Watchdog, WatchdogAlert};
 use crate::config::Config;
-use crate::event::{EditEvent, EditKind};
+use crate::event::EditEvent;
+use crate::recorder::Recorder;
 use crate::session::SessionManager;
-use crate::snapshot::{checkpoint::CheckpointManager, edit_log::EditLog, store::SnapshotStore};
+use crate::snapshot::checkpoint::CheckpointManager;
 use crate::theme::Theme;
-use crate::watcher::{differ::compute_diff, fs_watcher::FsWatcher};
+use crate::watcher::fs_watcher::FsWatcher;
 use anyhow::Result;
 use chrono::Utc;
 use crossterm::{
@@ -26,7 +27,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Widget,
 };
-use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -247,19 +247,22 @@ pub fn run_tui_with_options(
     let session_manager = SessionManager::new(sessions_dir);
     let session = session_manager.create()?;
 
-    let snapshot_store = SnapshotStore::new(session.dir.join("snapshots"));
-    let edit_log = EditLog::new(session.dir.join("edits.jsonl"));
+    let mut recorder = Recorder::new(project_path.clone(), session.dir.clone());
     let checkpoint_manager = CheckpointManager::new(session.dir.join("checkpoints"));
 
     // ── file-change channel & watcher ─────────────────────────────────────────
-    let (tx, rx) = mpsc::channel::<PathBuf>();
+    let (fs_tx, fs_rx) = mpsc::channel::<PathBuf>();
     let mut watcher = FsWatcher::with_ignore(
         project_path.clone(),
-        tx,
+        fs_tx,
         config.watch.debounce_ms,
         config.watch.ignore.clone(),
     )?;
     watcher.start()?;
+
+    // Channel used by Recorder to emit EditEvents (not currently consumed
+    // externally, but required by the Recorder API for daemon reuse).
+    let (edit_event_tx, _edit_event_rx) = mpsc::channel::<EditEvent>();
 
     // ── terminal setup ────────────────────────────────────────────────────────
     enable_raw_mode()?;
@@ -273,15 +276,8 @@ pub fn run_tui_with_options(
     app.connected = true;
     app.theme = Theme::from_preset(&config.theme.preset);
 
-    // Track last-known snapshot hashes per file path.
-    let mut file_hashes: HashMap<String, String> = HashMap::new();
-    // Auto-incrementing edit ID counter.
-    let mut edit_id_counter: u64 = 1;
     // Edit count since last checkpoint (for auto-checkpoint).
     let mut edits_since_checkpoint: u32 = 0;
-
-    // Current snapshot hashes for checkpoint saving.
-    let mut current_file_hashes: HashMap<String, String> = HashMap::new();
 
     // Whether the help overlay is visible.
     let mut show_help = false;
@@ -389,7 +385,7 @@ pub fn run_tui_with_options(
                             }
 
                             input::Action::Checkpoint => {
-                                let id = checkpoint_manager.save(current_file_hashes.clone())?;
+                                let id = checkpoint_manager.save(recorder.current_file_hashes().clone())?;
                                 app.checkpoint_ids.push(id);
                                 edits_since_checkpoint = 0;
                             }
@@ -406,126 +402,65 @@ pub fn run_tui_with_options(
 
         // ── drain file-change channel (non-blocking) ──────────────────────────
         loop {
-            match rx.try_recv() {
+            match fs_rx.try_recv() {
                 Ok(abs_path) => {
-                    // Compute relative path from project root.
-                    let rel_path = abs_path
-                        .strip_prefix(&project_path)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
-
-                    // Read new content from disk (or treat as delete if missing).
-                    let new_content = std::fs::read_to_string(&abs_path).unwrap_or_default();
-
-                    // Look up old content from snapshot store (empty if first edit).
-                    let old_content = if let Some(hash) = file_hashes.get(&rel_path) {
-                        snapshot_store
-                            .retrieve(hash)
-                            .ok()
-                            .and_then(|b| String::from_utf8(b).ok())
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-
-                    // Skip if content hasn't changed.
-                    if old_content == new_content {
-                        continue;
-                    }
-
-                    // Compute diff.
-                    let diff = compute_diff(&old_content, &new_content, &rel_path);
-
-                    // Determine edit kind.
-                    let kind = if !abs_path.exists() {
-                        EditKind::Delete
-                    } else if file_hashes.contains_key(&rel_path) {
-                        EditKind::Modify
-                    } else {
-                        EditKind::Create
-                    };
-
-                    // Store new snapshot.
-                    let after_hash = snapshot_store.store(new_content.as_bytes())?;
-
-                    let before_hash = file_hashes.get(&rel_path).cloned();
-
-                    // Build edit event.
-                    let edit = EditEvent {
-                        id: edit_id_counter,
-                        ts: Utc::now().timestamp_millis(),
-                        file: rel_path.clone(),
-                        kind,
-                        patch: diff.patch,
-                        before_hash,
-                        after_hash: after_hash.clone(),
-                        intent: None,
-                        tool: None,
-                        lines_added: diff.lines_added,
-                        lines_removed: diff.lines_removed,
-                        agent_id: None,
-                        agent_label: None,
-                        operation_id: None,
-                        operation_intent: None,
-                        tool_name: None,
-                        restore_id: None,
-                    };
-
-                    edit_id_counter += 1;
-
-                    // Persist.
-                    edit_log.append(&edit)?;
-
-                    // Update state.
-                    file_hashes.insert(rel_path.clone(), after_hash.clone());
-                    current_file_hashes.insert(rel_path.clone(), after_hash);
-                    edited_files.insert(rel_path.clone());
-                    app.push_edit(edit);
-
-                    // -- Run analysis engines on this edit --
-
-                    // Watchdog: check if a registered constant was modified.
-                    let alerts = watchdog.check(&rel_path, &old_content, &new_content);
-                    if !alerts.is_empty() {
-                        app.watchdog_alerts = alerts;
-                        app.sidebar_visible = true;
-                        app.sidebar_panel = SidebarPanel::Watchdog;
-                    }
-
-                    // Sentinels: evaluate all rules that watch this file.
-                    let mut violations = Vec::new();
-                    for (name, rule) in &config.sentinels {
-                        let watches = glob::Pattern::new(&rule.watch)
-                            .map(|p| p.matches(&rel_path))
-                            .unwrap_or(false);
-                        if watches {
-                            violations.extend(sentinel_engine.evaluate(name, rule));
-                        }
-                    }
-                    if !violations.is_empty() {
-                        app.sentinel_violations = violations;
-                        app.sidebar_visible = true;
-                        app.sidebar_panel = SidebarPanel::Sentinels;
-                    }
-
-                    // Blast radius: check dependents of this file.
-                    let dependents = blast_tracker.get_dependents(&rel_path);
-                    if !dependents.is_empty() {
-                        let status = blast_tracker.check_staleness(&rel_path, &edited_files);
-                        app.blast_radius_status = Some((rel_path.clone(), status));
-                        app.sidebar_visible = true;
-                        app.sidebar_panel = SidebarPanel::BlastRadius;
-                    }
-
-                    edits_since_checkpoint += 1;
-
-                    // Auto-checkpoint.
-                    if config.watch.auto_checkpoint_every > 0
-                        && edits_since_checkpoint >= config.watch.auto_checkpoint_every
+                    if let Ok(Some(result)) =
+                        recorder.process_file_change(&abs_path, &edit_event_tx, None)
                     {
-                        let id = checkpoint_manager.save(current_file_hashes.clone())?;
-                        app.checkpoint_ids.push(id);
-                        edits_since_checkpoint = 0;
+                        let rel_path = result.event.file.clone();
+                        let old_content = &result.old_content;
+                        let new_content = &result.new_content;
+
+                        edited_files.insert(rel_path.clone());
+                        app.push_edit(result.event);
+
+                        // -- Run analysis engines on this edit --
+
+                        // Watchdog: check if a registered constant was modified.
+                        let alerts = watchdog.check(&rel_path, old_content, new_content);
+                        if !alerts.is_empty() {
+                            app.watchdog_alerts = alerts;
+                            app.sidebar_visible = true;
+                            app.sidebar_panel = SidebarPanel::Watchdog;
+                        }
+
+                        // Sentinels: evaluate all rules that watch this file.
+                        let mut violations = Vec::new();
+                        for (name, rule) in &config.sentinels {
+                            let watches = glob::Pattern::new(&rule.watch)
+                                .map(|p| p.matches(&rel_path))
+                                .unwrap_or(false);
+                            if watches {
+                                violations.extend(sentinel_engine.evaluate(name, rule));
+                            }
+                        }
+                        if !violations.is_empty() {
+                            app.sentinel_violations = violations;
+                            app.sidebar_visible = true;
+                            app.sidebar_panel = SidebarPanel::Sentinels;
+                        }
+
+                        // Blast radius: check dependents of this file.
+                        let dependents = blast_tracker.get_dependents(&rel_path);
+                        if !dependents.is_empty() {
+                            let status =
+                                blast_tracker.check_staleness(&rel_path, &edited_files);
+                            app.blast_radius_status = Some((rel_path.clone(), status));
+                            app.sidebar_visible = true;
+                            app.sidebar_panel = SidebarPanel::BlastRadius;
+                        }
+
+                        edits_since_checkpoint += 1;
+
+                        // Auto-checkpoint.
+                        if config.watch.auto_checkpoint_every > 0
+                            && edits_since_checkpoint >= config.watch.auto_checkpoint_every
+                        {
+                            let id = checkpoint_manager
+                                .save(recorder.current_file_hashes().clone())?;
+                            app.checkpoint_ids.push(id);
+                            edits_since_checkpoint = 0;
+                        }
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
