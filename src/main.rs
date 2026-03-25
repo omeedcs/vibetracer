@@ -90,32 +90,25 @@ fn main() -> anyhow::Result<()> {
             let project_path = resolve_path(cli.path.as_deref())?;
 
             match command {
-                DaemonCommands::Start => {
-                    match vibetracer::daemon::start_daemon(&project_path) {
-                        Ok((pid, session_id)) => {
-                            println!(
-                                "daemon started (PID {}, session {})",
-                                pid, session_id
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("error: {}", e);
-                            std::process::exit(1);
-                        }
+                DaemonCommands::Start => match vibetracer::daemon::start_daemon(&project_path) {
+                    Ok((pid, session_id)) => {
+                        println!("daemon started (PID {}, session {})", pid, session_id);
                     }
-                }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        std::process::exit(1);
+                    }
+                },
 
-                DaemonCommands::Stop => {
-                    match vibetracer::daemon::stop_daemon(&project_path) {
-                        Ok(()) => {
-                            println!("daemon stopped");
-                        }
-                        Err(e) => {
-                            eprintln!("error: {}", e);
-                            std::process::exit(1);
-                        }
+                DaemonCommands::Stop => match vibetracer::daemon::stop_daemon(&project_path) {
+                    Ok(()) => {
+                        println!("daemon stopped");
                     }
-                }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        std::process::exit(1);
+                    }
+                },
 
                 DaemonCommands::Status => {
                     match vibetracer::daemon::daemon_status(&project_path) {
@@ -220,7 +213,10 @@ fn main() -> anyhow::Result<()> {
                         .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_else(|| meta.started_at.to_string());
                     let agent_count = meta.agents.len();
-                    println!("{:<30}  {:<20}  {:<8}  {:?}", meta.id, dt, agent_count, meta.mode);
+                    println!(
+                        "{:<30}  {:<20}  {:<8}  {:?}",
+                        meta.id, dt, agent_count, meta.mode
+                    );
                 }
             }
         }
@@ -366,7 +362,10 @@ fn main() -> anyhow::Result<()> {
 
             let edit_log_path = session_dir.join("edits.jsonl");
             if !edit_log_path.exists() {
-                anyhow::bail!("no edit log found in session dir: {}", session_dir.display());
+                anyhow::bail!(
+                    "no edit log found in session dir: {}",
+                    session_dir.display()
+                );
             }
 
             let edits = EditLog::read_all(&edit_log_path)?;
@@ -376,10 +375,9 @@ fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("edit id {} not found in session", edit_id))?;
 
             // We restore to the before_hash of the target edit (state before that edit).
-            let hash = target
-                .before_hash
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("edit {} has no before_hash -- cannot restore", edit_id))?;
+            let hash = target.before_hash.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("edit {} has no before_hash -- cannot restore", edit_id)
+            })?;
 
             let store_dir = session_dir.join("snapshots");
             let store = SnapshotStore::new(store_dir);
@@ -478,7 +476,10 @@ fn find_most_recent_session(vt_dir: &std::path::Path) -> anyhow::Result<PathBuf>
         if !meta_path.exists() {
             continue;
         }
-        let modified = entry.metadata()?.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let modified = entry
+            .metadata()?
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
             best = Some((modified, path));
         }

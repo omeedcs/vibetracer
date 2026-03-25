@@ -30,8 +30,7 @@ impl ConflictChecker {
         files_to_restore: &[String],
         edited_files: &HashSet<String>,
     ) -> Vec<ConflictSuggestion> {
-        let restore_set: HashSet<&str> =
-            files_to_restore.iter().map(String::as_str).collect();
+        let restore_set: HashSet<&str> = files_to_restore.iter().map(String::as_str).collect();
 
         let mut suggestions = Vec::new();
 
@@ -45,9 +44,7 @@ impl ConflictChecker {
             let missing: Vec<String> = dep
                 .dependents
                 .iter()
-                .filter(|d| {
-                    edited_files.contains(d.as_str()) && !restore_set.contains(d.as_str())
-                })
+                .filter(|d| edited_files.contains(d.as_str()) && !restore_set.contains(d.as_str()))
                 .cloned()
                 .collect();
 
@@ -99,8 +96,10 @@ mod tests {
             "client.rs".to_string(),
             "tests.rs".to_string(),
         ];
-        let edited: HashSet<String> =
-            ["api.rs", "client.rs", "tests.rs"].iter().map(|s| s.to_string()).collect();
+        let edited: HashSet<String> = ["api.rs", "client.rs", "tests.rs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let suggestions = checker.check_restore_conflicts(&files_to_restore, &edited);
         assert!(suggestions.is_empty());
@@ -113,8 +112,10 @@ mod tests {
 
         // Restore only the source; dependents were edited but not included
         let files_to_restore = vec!["schema.rs".to_string()];
-        let edited: HashSet<String> =
-            ["schema.rs", "migration.rs", "model.rs"].iter().map(|s| s.to_string()).collect();
+        let edited: HashSet<String> = ["schema.rs", "migration.rs", "model.rs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let suggestions = checker.check_restore_conflicts(&files_to_restore, &edited);
         assert_eq!(suggestions.len(), 1);
@@ -146,8 +147,10 @@ mod tests {
 
         // Restoring something else entirely
         let files_to_restore = vec!["other.rs".to_string()];
-        let edited: HashSet<String> =
-            ["source.rs", "dep.rs"].iter().map(|s| s.to_string()).collect();
+        let edited: HashSet<String> = ["source.rs", "dep.rs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let suggestions = checker.check_restore_conflicts(&files_to_restore, &edited);
         assert!(suggestions.is_empty());
@@ -170,16 +173,15 @@ mod tests {
 
     #[test]
     fn test_multiple_dependency_rules() {
-        let config = config_with_deps(vec![
-            ("a.rs", vec!["b.rs"]),
-            ("c.rs", vec!["d.rs"]),
-        ]);
+        let config = config_with_deps(vec![("a.rs", vec!["b.rs"]), ("c.rs", vec!["d.rs"])]);
         let checker = ConflictChecker::new(config);
 
         // Restoring both sources but missing both dependents
         let files_to_restore = vec!["a.rs".to_string(), "c.rs".to_string()];
-        let edited: HashSet<String> =
-            ["a.rs", "b.rs", "c.rs", "d.rs"].iter().map(|s| s.to_string()).collect();
+        let edited: HashSet<String> = ["a.rs", "b.rs", "c.rs", "d.rs"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let suggestions = checker.check_restore_conflicts(&files_to_restore, &edited);
         assert_eq!(suggestions.len(), 2);

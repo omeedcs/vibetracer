@@ -74,9 +74,18 @@ pub struct RestoreFileEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RestoreScope {
-    File { path: String, target_edit_id: u64 },
-    Operation { operation_id: String },
-    AgentRange { agent_id: String, from_ts: i64, to_ts: i64 },
+    File {
+        path: String,
+        target_edit_id: u64,
+    },
+    Operation {
+        operation_id: String,
+    },
+    AgentRange {
+        agent_id: String,
+        from_ts: i64,
+        to_ts: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,7 +240,9 @@ mod tests {
 
     #[test]
     fn test_restore_scope_variants() {
-        let op = RestoreScope::Operation { operation_id: "op-1".to_string() };
+        let op = RestoreScope::Operation {
+            operation_id: "op-1".to_string(),
+        };
         let json = serde_json::to_string(&op).unwrap();
         assert!(json.contains("\"type\":\"operation\""));
 

@@ -101,7 +101,11 @@ impl Widget for HelpOverlay {
             if key.is_empty() {
                 // Section header
                 let line = Line::from(vec![
-                    Span::raw(format!("{:width$}", "", width = (key_col_width + gap) as usize)),
+                    Span::raw(format!(
+                        "{:width$}",
+                        "",
+                        width = (key_col_width + gap) as usize
+                    )),
                     Span::styled(*desc, Style::default().fg(COLOR_SECTION)),
                 ]);
                 line.render(row_area, buf);

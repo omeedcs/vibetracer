@@ -57,7 +57,11 @@ impl Widget for RestoreConfirmDialog<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Compute dialog height: title(1) + border(2) + files + gap + conflicts + gap + instructions(1)
         let content_height = self.files.len() as u16
-            + if self.conflicts.is_empty() { 0 } else { 1 + self.conflicts.len() as u16 }
+            + if self.conflicts.is_empty() {
+                0
+            } else {
+                1 + self.conflicts.len() as u16
+            }
             + 2; // blank line + instructions line
         let height = (content_height + 2).min(MAX_HEIGHT).min(area.height); // +2 for borders
         let width = MAX_WIDTH.min(area.width);

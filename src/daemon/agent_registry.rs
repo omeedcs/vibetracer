@@ -26,12 +26,7 @@ impl AgentRegistry {
     /// If the agent already exists, `last_seen` is updated.
     ///
     /// Returns a reference to the `AgentInfo` for this agent.
-    pub fn register_or_update(
-        &mut self,
-        agent_id: &str,
-        tool_type: &str,
-        ts: i64,
-    ) -> &AgentInfo {
+    pub fn register_or_update(&mut self, agent_id: &str, tool_type: &str, ts: i64) -> &AgentInfo {
         let next_label = &mut self.next_label;
         self.agents
             .entry(agent_id.to_string())

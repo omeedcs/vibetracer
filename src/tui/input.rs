@@ -86,9 +86,7 @@ pub fn map_key(key: KeyEvent) -> Action {
         (KeyCode::Tab, _) => Action::CycleFocus,
 
         // Solo agent (1-9)
-        (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
-            Action::SoloAgent(c as u8 - b'0')
-        }
+        (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => Action::SoloAgent(c as u8 - b'0'),
 
         _ => Action::Noop,
     }
@@ -111,11 +109,7 @@ pub fn apply_action(app: &mut App, action: Action) {
                 let file = edit.file.clone();
                 if !app.detached_files.contains(&file) {
                     // Auto-detach at the current per-file position
-                    let pos = app
-                        .file_playheads
-                        .get(&file)
-                        .copied()
-                        .unwrap_or(0);
+                    let pos = app.file_playheads.get(&file).copied().unwrap_or(0);
                     app.detached_files.insert(file.clone());
                     app.file_playheads.insert(file.clone(), pos);
                 }
@@ -129,11 +123,7 @@ pub fn apply_action(app: &mut App, action: Action) {
             if let Some(edit) = app.current_edit() {
                 let file = edit.file.clone();
                 if !app.detached_files.contains(&file) {
-                    let pos = app
-                        .file_playheads
-                        .get(&file)
-                        .copied()
-                        .unwrap_or(0);
+                    let pos = app.file_playheads.get(&file).copied().unwrap_or(0);
                     app.detached_files.insert(file.clone());
                     app.file_playheads.insert(file.clone(), pos);
                 }

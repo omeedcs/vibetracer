@@ -9,11 +9,11 @@ pub mod widgets;
 
 pub use app::*;
 
+use crate::checkpoint::CheckpointManager;
 use crate::config::Config;
 use crate::daemon;
 use crate::recorder::Recorder;
 use crate::session::SessionManager;
-use crate::checkpoint::CheckpointManager;
 use crate::theme::Theme;
 use crate::watcher::fs_watcher::FsWatcher;
 use anyhow::Result;

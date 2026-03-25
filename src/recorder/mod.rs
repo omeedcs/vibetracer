@@ -218,9 +218,7 @@ mod tests {
         let file_path = project_root.join("hello.txt");
         std::fs::write(&file_path, "hello world\n").unwrap();
 
-        let result = recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        let result = recorder.process_file_change(&file_path, &tx, None).unwrap();
 
         assert!(result.is_some(), "first change should produce a result");
         let result = result.unwrap();
@@ -240,15 +238,11 @@ mod tests {
 
         let file_path = project_root.join("app.rs");
         std::fs::write(&file_path, "fn main() {}\n").unwrap();
-        recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        recorder.process_file_change(&file_path, &tx, None).unwrap();
 
         // Modify the file.
         std::fs::write(&file_path, "fn main() { println!(\"hi\"); }\n").unwrap();
-        let result = recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        let result = recorder.process_file_change(&file_path, &tx, None).unwrap();
 
         assert!(result.is_some());
         let result = result.unwrap();
@@ -266,14 +260,10 @@ mod tests {
 
         let file_path = project_root.join("stable.txt");
         std::fs::write(&file_path, "unchanged\n").unwrap();
-        recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        recorder.process_file_change(&file_path, &tx, None).unwrap();
 
         // Process same file again without changes.
-        let result = recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        let result = recorder.process_file_change(&file_path, &tx, None).unwrap();
         assert!(result.is_none(), "unchanged file should return None");
     }
 
@@ -342,18 +332,14 @@ mod tests {
 
         let file_path = project_root.join("tracked.txt");
         std::fs::write(&file_path, "v1\n").unwrap();
-        recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        recorder.process_file_change(&file_path, &tx, None).unwrap();
 
         assert!(recorder.current_file_hashes().contains_key("tracked.txt"));
 
         // Modify and check hash changes.
         let hash_v1 = recorder.current_file_hashes()["tracked.txt"].clone();
         std::fs::write(&file_path, "v2\n").unwrap();
-        recorder
-            .process_file_change(&file_path, &tx, None)
-            .unwrap();
+        recorder.process_file_change(&file_path, &tx, None).unwrap();
         let hash_v2 = recorder.current_file_hashes()["tracked.txt"].clone();
 
         assert_ne!(hash_v1, hash_v2);

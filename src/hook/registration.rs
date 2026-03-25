@@ -128,11 +128,13 @@ mod tests {
         let project_path = tmp.path();
         register_hook(&claude_dir, project_path).unwrap();
 
-        let raw =
-            std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
+        let raw = std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
         // The hook command must send JSON with the v2 fields to the socket.
         // In the serialized JSON file, inner quotes are escaped.
-        assert!(raw.contains("\\\"type\\\":\\\"hook\\\""), "must use v2 JSON protocol");
+        assert!(
+            raw.contains("\\\"type\\\":\\\"hook\\\""),
+            "must use v2 JSON protocol"
+        );
         assert!(raw.contains("agent_id"), "must include agent_id");
         assert!(raw.contains("tool_name"), "must include tool_name");
         // Socket path must be derived from project_path/.vibetracer/daemon.sock.

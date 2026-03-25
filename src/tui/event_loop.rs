@@ -1,10 +1,10 @@
 use crate::analysis::blast_radius::BlastRadiusTracker;
 use crate::analysis::sentinels::SentinelEngine;
 use crate::analysis::watchdog::Watchdog;
+use crate::checkpoint::CheckpointManager;
 use crate::config::Config;
 use crate::event::EditEvent;
 use crate::recorder::Recorder;
-use crate::checkpoint::CheckpointManager;
 use crate::tui::{App, SidebarPanel, input, layout, widgets};
 use anyhow::Result;
 use crossterm::event::{self as ct_event, Event, KeyEventKind};
@@ -52,6 +52,7 @@ impl Widget for BgFill {
 ///   pre-built `EditEvent`s. No watcher or recorder is needed.
 ///
 /// In replay mode both receivers are `None` and no new edits arrive.
+#[allow(clippy::too_many_arguments)]
 pub fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
@@ -237,16 +238,14 @@ pub fn run_event_loop(
                             }
 
                             input::Action::UndoRestore => {
-                                let restore_log =
-                                    crate::restore::restore_log::RestoreLog::new(
-                                        session_dir.join("restores.jsonl"),
-                                    );
+                                let restore_log = crate::restore::restore_log::RestoreLog::new(
+                                    session_dir.join("restores.jsonl"),
+                                );
                                 if let Ok(events) = restore_log.last_n(1) {
                                     if let Some(last) = events.first() {
-                                        let store =
-                                            crate::snapshot::store::SnapshotStore::new(
-                                                session_dir.join("snapshots"),
-                                            );
+                                        let store = crate::snapshot::store::SnapshotStore::new(
+                                            session_dir.join("snapshots"),
+                                        );
                                         let engine = crate::restore::RestoreEngine::new(
                                             project_path.to_path_buf(),
                                             store,

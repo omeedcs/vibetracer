@@ -90,10 +90,7 @@ impl Widget for StatusBar<'_> {
         // Command view indicator
         if self.app.command_view {
             left_spans.push(sep.clone());
-            left_spans.push(Span::styled(
-                "commands",
-                Style::default().fg(color_accent),
-            ));
+            left_spans.push(Span::styled("commands", Style::default().fg(color_accent)));
         }
 
         // Agent label for current edit

@@ -12,17 +12,19 @@ pub struct RestoreEngine {
 
 impl RestoreEngine {
     pub fn new(project_root: PathBuf, store: SnapshotStore) -> Self {
-        Self { project_root, store }
+        Self {
+            project_root,
+            store,
+        }
     }
 
     /// Restore a file to the content at the given snapshot hash.
     ///
     /// Creates parent directories as needed.
     pub fn restore_file(&self, relative_path: &str, snapshot_hash: &str) -> Result<()> {
-        let content = self
-            .store
-            .retrieve(snapshot_hash)
-            .with_context(|| format!("retrieve snapshot {} for {}", snapshot_hash, relative_path))?;
+        let content = self.store.retrieve(snapshot_hash).with_context(|| {
+            format!("retrieve snapshot {} for {}", snapshot_hash, relative_path)
+        })?;
 
         let dest = self.project_root.join(relative_path);
         if let Some(parent) = dest.parent() {

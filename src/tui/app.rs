@@ -72,7 +72,6 @@ pub struct App {
     pub theme: Theme,
 
     // ── v2 fields ─────────────────────────────────────────────────────────────
-
     /// Per-file playhead positions (filename -> edit index within that file).
     pub file_playheads: HashMap<String, usize>,
     /// Files with independent (detached) playheads.

@@ -19,9 +19,7 @@ pub fn read_pid_file(path: &Path) -> Result<(i32, String)> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("read PID file {:?}", path))?;
     let mut lines = content.lines();
-    let pid_str = lines
-        .next()
-        .context("PID file is empty")?;
+    let pid_str = lines.next().context("PID file is empty")?;
     let pid: i32 = pid_str
         .trim()
         .parse()

@@ -97,12 +97,8 @@ fn handle_connection(stream: UnixStream, tx: &mpsc::Sender<SocketMessage>) -> Re
 }
 
 /// Parse a single JSON message string into a `SocketMessage`.
-fn parse_message(
-    json_str: &str,
-    stream: Option<UnixStream>,
-) -> Result<SocketMessage> {
-    let value: serde_json::Value =
-        serde_json::from_str(json_str).context("invalid JSON")?;
+fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMessage> {
+    let value: serde_json::Value = serde_json::from_str(json_str).context("invalid JSON")?;
 
     let msg_type = value
         .get("type")
@@ -236,8 +232,7 @@ mod tests {
 
     #[test]
     fn parse_restore_start() {
-        let json =
-            r#"{"type":"restore_start","restore_id":42,"files":["src/a.rs","src/b.rs"]}"#;
+        let json = r#"{"type":"restore_start","restore_id":42,"files":["src/a.rs","src/b.rs"]}"#;
         let msg = parse_message(json, None).unwrap();
         match msg {
             SocketMessage::RestoreStart { restore_id, files } => {

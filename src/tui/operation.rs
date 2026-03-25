@@ -36,8 +36,10 @@ impl OperationManager {
             .clone()
             .unwrap_or_else(|| format!("ungrouped-{edit_index}"));
 
-        let group = self.groups.entry(op_id.clone()).or_insert_with(|| {
-            OperationGroup {
+        let group = self
+            .groups
+            .entry(op_id.clone())
+            .or_insert_with(|| OperationGroup {
                 operation_id: op_id,
                 agent_id: edit.agent_id.clone(),
                 agent_label: edit.agent_label.clone(),
@@ -46,8 +48,7 @@ impl OperationManager {
                 files_touched: Vec::new(),
                 ts_start: edit.ts,
                 ts_end: edit.ts,
-            }
-        });
+            });
 
         group.edits.push(edit_index);
 

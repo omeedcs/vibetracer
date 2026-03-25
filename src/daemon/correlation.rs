@@ -95,7 +95,8 @@ impl Correlator {
 
     /// Clear all pending restore entries for a given restore ID.
     pub fn clear_restore(&mut self, restore_id: u64) {
-        self.pending_restores.retain(|_file, rid| *rid != restore_id);
+        self.pending_restores
+            .retain(|_file, rid| *rid != restore_id);
     }
 }
 

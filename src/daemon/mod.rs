@@ -99,11 +99,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 SocketMessage::Hook(payload, file) => {
                     // Register or update the agent.
                     let ts = Utc::now().timestamp_millis();
-                    agent_registry.register_or_update(
-                        &payload.agent_id,
-                        "claude-code",
-                        ts,
-                    );
+                    agent_registry.register_or_update(&payload.agent_id, "claude-code", ts);
                     // Push enrichment for correlation.
                     correlator.push_enrichment(&file, payload);
                 }
@@ -188,11 +184,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 None
             };
 
-            match recorder.process_file_change(
-                &abs_path,
-                &event_tx,
-                enrichment.as_ref(),
-            ) {
+            match recorder.process_file_change(&abs_path, &event_tx, enrichment.as_ref()) {
                 Ok(Some(_result)) => {
                     edit_count += 1;
                     // Increment agent edit count if enrichment came from a hook.
@@ -222,9 +214,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     // Shutdown: update session metadata with final agent list.
     let meta_path = session.dir.join("meta.json");
     if let Ok(content) = std::fs::read_to_string(&meta_path) {
-        if let Ok(mut meta) =
-            serde_json::from_str::<crate::session::SessionMeta>(&content)
-        {
+        if let Ok(mut meta) = serde_json::from_str::<crate::session::SessionMeta>(&content) {
             meta.agents = agent_registry.to_vec();
             if let Ok(json) = serde_json::to_string_pretty(&meta) {
                 let _ = std::fs::write(&meta_path, json);
@@ -321,9 +311,7 @@ pub fn stop_daemon(project_path: &std::path::Path) -> Result<()> {
 
     // Send stop command over the socket.
     if sock_file.exists() {
-        if let Ok(mut stream) =
-            std::os::unix::net::UnixStream::connect(&sock_file)
-        {
+        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(&sock_file) {
             let _ = writeln!(stream, r#"{{"type":"control","command":"stop"}}"#);
         }
     }
@@ -380,20 +368,13 @@ pub fn daemon_status(project_path: &std::path::Path) -> Result<String> {
 
     // Try to get detailed status from the socket.
     if sock_file.exists() {
-        if let Ok(mut stream) =
-            std::os::unix::net::UnixStream::connect(&sock_file)
-        {
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .ok();
+        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(&sock_file) {
+            stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
             let _ = writeln!(stream, r#"{{"type":"control","command":"status"}}"#);
 
             let mut response = String::new();
-            if std::io::BufRead::read_line(
-                &mut std::io::BufReader::new(&stream),
-                &mut response,
-            )
-            .is_ok()
+            if std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut response)
+                .is_ok()
                 && !response.trim().is_empty()
             {
                 return Ok(response.trim().to_string());

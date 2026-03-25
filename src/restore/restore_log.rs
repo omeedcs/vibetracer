@@ -110,7 +110,10 @@ mod tests {
     }
 
     fn file_scope(id: u64) -> RestoreScope {
-        RestoreScope::File { path: "src/lib.rs".to_string(), target_edit_id: id }
+        RestoreScope::File {
+            path: "src/lib.rs".to_string(),
+            target_edit_id: id,
+        }
     }
 
     fn entry(path: &str, from: &str, to: &str) -> RestoreFileEntry {
@@ -126,8 +129,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut log = make_log(dir.path());
 
-        let e1 = log.append(file_scope(1), vec![entry("a.rs", "h1", "h2")]).unwrap();
-        let e2 = log.append(file_scope(2), vec![entry("b.rs", "h3", "")]).unwrap();
+        let e1 = log
+            .append(file_scope(1), vec![entry("a.rs", "h1", "h2")])
+            .unwrap();
+        let e2 = log
+            .append(file_scope(2), vec![entry("b.rs", "h3", "")])
+            .unwrap();
 
         assert_eq!(e1.id, 0);
         assert_eq!(e2.id, 1);
@@ -218,7 +225,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut log = make_log(dir.path());
 
-        let op_scope = RestoreScope::Operation { operation_id: "op-1".to_string() };
+        let op_scope = RestoreScope::Operation {
+            operation_id: "op-1".to_string(),
+        };
         let range_scope = RestoreScope::AgentRange {
             agent_id: "a1".to_string(),
             from_ts: 1000,
