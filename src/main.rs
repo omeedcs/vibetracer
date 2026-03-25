@@ -3,8 +3,10 @@ use std::path::PathBuf;
 
 use vibetracer::config::Config;
 use vibetracer::import::claude::{import_session, list_sessions};
+use vibetracer::restore::RestoreEngine;
 use vibetracer::session::SessionManager;
 use vibetracer::snapshot::edit_log::EditLog;
+use vibetracer::snapshot::store::SnapshotStore;
 use vibetracer::tui::{App, PlaybackState, RunOptions};
 
 #[derive(Parser)]
@@ -45,6 +47,14 @@ enum Commands {
     Import {
         /// Session ID or path to JSONL file (lists available sessions if omitted)
         session: Option<String>,
+    },
+    /// Restore a file to a prior state
+    Restore {
+        /// File path to restore (relative to project root)
+        file: String,
+        /// Edit ID to restore to (from edits.jsonl)
+        #[arg(long)]
+        edit_id: u64,
     },
     /// Manage the background recorder daemon
     Daemon {
@@ -203,13 +213,14 @@ fn main() -> anyhow::Result<()> {
             if sessions.is_empty() {
                 println!("no sessions found");
             } else {
-                println!("{:<30}  {:<20}  mode", "id", "started_at");
-                println!("{}", "-".repeat(60));
+                println!("{:<30}  {:<20}  {:<8}  mode", "id", "started_at", "agents");
+                println!("{}", "-".repeat(72));
                 for meta in sessions {
                     let dt = chrono::DateTime::from_timestamp(meta.started_at, 0)
                         .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_else(|| meta.started_at.to_string());
-                    println!("{:<30}  {:<20}  {:?}", meta.id, dt, meta.mode);
+                    let agent_count = meta.agents.len();
+                    println!("{:<30}  {:<20}  {:<8}  {:?}", meta.id, dt, agent_count, meta.mode);
                 }
             }
         }
@@ -327,6 +338,57 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
+        // ── Restore: headless file restore to a prior edit ────────────────────
+        Some(Commands::Restore { file, edit_id }) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+            let vt_dir = project_path.join(".vibetracer");
+
+            // Find the active (or most recent) session directory.
+            let session_dir = {
+                let pid_path = vt_dir.join("daemon.pid");
+                if pid_path.exists() {
+                    // Daemon is (or was) running -- read session ID from PID file.
+                    match vibetracer::daemon::pid::read_pid_file(&pid_path) {
+                        Ok((_pid, session_id)) => {
+                            let dir = vt_dir.join("sessions").join(&session_id);
+                            if dir.exists() {
+                                dir
+                            } else {
+                                find_most_recent_session(&vt_dir)?
+                            }
+                        }
+                        Err(_) => find_most_recent_session(&vt_dir)?,
+                    }
+                } else {
+                    find_most_recent_session(&vt_dir)?
+                }
+            };
+
+            let edit_log_path = session_dir.join("edits.jsonl");
+            if !edit_log_path.exists() {
+                anyhow::bail!("no edit log found in session dir: {}", session_dir.display());
+            }
+
+            let edits = EditLog::read_all(&edit_log_path)?;
+            let target = edits
+                .iter()
+                .find(|e| e.id == edit_id)
+                .ok_or_else(|| anyhow::anyhow!("edit id {} not found in session", edit_id))?;
+
+            // We restore to the before_hash of the target edit (state before that edit).
+            let hash = target
+                .before_hash
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("edit {} has no before_hash -- cannot restore", edit_id))?;
+
+            let store_dir = session_dir.join("snapshots");
+            let store = SnapshotStore::new(store_dir);
+            let engine = RestoreEngine::new(project_path.clone(), store);
+
+            engine.restore_file(&file, hash)?;
+            println!("restored {} to state before edit {}", file, edit_id);
+        }
+
         // ── Default: run live TUI ──────────────────────────────────────────────
         None => {
             let project_path = resolve_path(cli.path.as_deref())?;
@@ -396,4 +458,32 @@ fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
 fn load_config_or_default(project_path: &std::path::Path) -> Config {
     let config_path = project_path.join(".vibetracer").join("config.toml");
     Config::load(&config_path).unwrap_or_default()
+}
+
+/// Find the most recently modified session directory under `vt_dir/sessions/`.
+fn find_most_recent_session(vt_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
+    let sessions_dir = vt_dir.join("sessions");
+    if !sessions_dir.exists() {
+        anyhow::bail!("no sessions directory found at {}", sessions_dir.display());
+    }
+
+    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(&sessions_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let meta_path = path.join("meta.json");
+        if !meta_path.exists() {
+            continue;
+        }
+        let modified = entry.metadata()?.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+            best = Some((modified, path));
+        }
+    }
+
+    best.map(|(_, p)| p)
+        .ok_or_else(|| anyhow::anyhow!("no sessions found under {}", sessions_dir.display()))
 }
