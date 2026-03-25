@@ -8,8 +8,9 @@ const VIBETRACER_DESCRIPTION: &str = "vibetracer edit tracking";
 ///
 /// Reads or creates the settings file, removes any existing vibetracer hook,
 /// then appends a new `PostToolUse` hook entry that forwards tool events to
-/// `socket_path` via `nc -U`.
-pub fn register_hook(claude_dir: &Path, socket_path: &str) -> Result<()> {
+/// the daemon's Unix socket (`<project_path>/.vibetracer/daemon.sock`) via
+/// `nc -U`.
+pub fn register_hook(claude_dir: &Path, project_path: &Path) -> Result<()> {
     let settings_path = claude_dir.join("settings.local.json");
 
     // Read existing settings or start with an empty object.
@@ -30,13 +31,27 @@ pub fn register_hook(claude_dir: &Path, socket_path: &str) -> Result<()> {
     let hooks = settings["hooks"].as_array_mut().unwrap();
     hooks.retain(|entry| !entry_has_vibetracer_description(entry));
 
-    // Build the new hook entry.
+    // Construct the absolute path to the daemon socket.
+    let socket_path = project_path
+        .join(".vibetracer")
+        .join("daemon.sock")
+        .to_string_lossy()
+        .into_owned();
+
+    // Build the new hook entry with v2 JSON protocol.
+    // The command sends a structured JSON message containing the agent ID
+    // ($$ = PID of the shell running the hook), tool name, and an empty file
+    // placeholder.  The daemon's socket listener parses this as a
+    // SocketMessage::Hook.
+    let command = format!(
+        r#"echo '{{"type":"hook","agent_id":"'"$$"'","operation_id":"unknown","tool_name":"'"$TOOL_NAME"'","file":""}}' | nc -U {socket_path}"#
+    );
     let new_entry = json!({
         "matcher": "PostToolUse",
         "hooks": [
             {
                 "type": "command",
-                "command": format!("echo '$TOOL_NAME $TOOL_INPUT' | nc -U {socket_path}"),
+                "command": command,
                 "description": VIBETRACER_DESCRIPTION,
             }
         ]
@@ -101,15 +116,43 @@ mod tests {
     fn test_register_creates_settings_file() {
         let tmp = tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
-        register_hook(&claude_dir, "/tmp/vibetracer.sock").unwrap();
+        let project_path = tmp.path();
+        register_hook(&claude_dir, project_path).unwrap();
         assert!(claude_dir.join("settings.local.json").exists());
+    }
+
+    #[test]
+    fn test_register_uses_v2_json_protocol() {
+        let tmp = tempdir().unwrap();
+        let claude_dir = tmp.path().join(".claude");
+        let project_path = tmp.path();
+        register_hook(&claude_dir, project_path).unwrap();
+
+        let raw =
+            std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
+        // The hook command must send JSON with the v2 fields to the socket.
+        // In the serialized JSON file, inner quotes are escaped.
+        assert!(raw.contains("\\\"type\\\":\\\"hook\\\""), "must use v2 JSON protocol");
+        assert!(raw.contains("agent_id"), "must include agent_id");
+        assert!(raw.contains("tool_name"), "must include tool_name");
+        // Socket path must be derived from project_path/.vibetracer/daemon.sock.
+        let expected_sock = project_path
+            .join(".vibetracer")
+            .join("daemon.sock")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            raw.contains(&format!("nc -U {}", expected_sock)),
+            "must target the derived daemon socket"
+        );
     }
 
     #[test]
     fn test_unregister_removes_vibetracer_entry() {
         let tmp = tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
-        register_hook(&claude_dir, "/tmp/vibetracer.sock").unwrap();
+        let project_path = tmp.path();
+        register_hook(&claude_dir, project_path).unwrap();
         unregister_hook(&claude_dir).unwrap();
 
         let raw = std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
