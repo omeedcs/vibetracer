@@ -24,23 +24,34 @@ fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
     );
 }
 
-/// A widget that renders the diff preview for the current edit.
+/// A widget that renders the preview pane, delegating to either the file view
+/// (syntax-highlighted source) or the diff view based on `app.preview_mode`.
 pub struct PreviewPane<'a> {
     pub app: &'a App,
+    pub file_content: Option<(&'a str, &'a str)>, // (content, filename)
+    pub highlighter: Option<&'a crate::tui::syntax::Highlighter>,
+    pub changed_lines: &'a std::collections::HashSet<usize>,
 }
 
 impl<'a> PreviewPane<'a> {
-    pub fn new(app: &'a App) -> Self {
-        Self { app }
+    pub fn new(
+        app: &'a App,
+        file_content: Option<(&'a str, &'a str)>,
+        highlighter: Option<&'a crate::tui::syntax::Highlighter>,
+        changed_lines: &'a std::collections::HashSet<usize>,
+    ) -> Self {
+        Self {
+            app,
+            file_content,
+            highlighter,
+            changed_lines,
+        }
     }
 }
 
-impl Widget for PreviewPane<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.height == 0 {
-            return;
-        }
-
+impl PreviewPane<'_> {
+    /// Render the existing diff view (unified diff with colored +/- lines).
+    fn render_diff(&self, area: Rect, buf: &mut Buffer) {
         let edit = match self.app.current_edit() {
             Some(e) => e,
             None => {
@@ -135,6 +146,41 @@ impl Widget for PreviewPane<'_> {
                 row,
                 buf,
             );
+        }
+    }
+}
+
+impl Widget for PreviewPane<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if area.height == 0 {
+            return;
+        }
+
+        if self.app.current_edit().is_none() {
+            render_empty_state(area, buf, &self.app.theme);
+            return;
+        }
+
+        match self.app.preview_mode {
+            crate::tui::app::PreviewMode::File => {
+                if let (Some((content, filename)), Some(highlighter)) =
+                    (self.file_content, self.highlighter)
+                {
+                    super::file_view::FileView::new(
+                        self.app,
+                        content,
+                        filename,
+                        highlighter,
+                        self.changed_lines,
+                    )
+                    .render(area, buf);
+                } else {
+                    render_empty_state(area, buf, &self.app.theme);
+                }
+            }
+            crate::tui::app::PreviewMode::Diff => {
+                self.render_diff(area, buf);
+            }
         }
     }
 }

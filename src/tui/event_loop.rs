@@ -65,6 +65,12 @@ pub fn run_event_loop(
     session_dir: &Path,
     daemon_running: bool,
 ) -> Result<()> {
+    // Syntax highlighter for file view mode.
+    let highlighter = crate::tui::syntax::Highlighter::new();
+
+    // Track playhead to detect changes and auto-scroll to changed lines.
+    let mut last_playhead: usize = app.playhead;
+
     // Edit count since last checkpoint (for auto-checkpoint).
     let mut edits_since_checkpoint: u32 = 0;
 
@@ -85,6 +91,9 @@ pub fn run_event_loop(
     // ── main event loop ───────────────────────────────────────────────────────
     loop {
         // ── render ────────────────────────────────────────────────────────────
+        let file_content_data: Option<(String, String)> = app.current_file_content(session_dir);
+        let changed_lines = app.changed_lines_from_patch();
+
         terminal.draw(|frame| {
             let area = frame.area();
             let buf = frame.buffer_mut();
@@ -135,7 +144,13 @@ pub fn run_event_loop(
             }
 
             // Preview pane.
-            widgets::preview::PreviewPane::new(app).render(lo.preview, buf);
+            let content_ref = file_content_data.as_ref().map(|(c, f)| (c.as_str(), f.as_str()));
+            widgets::preview::PreviewPane::new(
+                app,
+                content_ref,
+                Some(&highlighter),
+                &changed_lines,
+            ).render(lo.preview, buf);
 
             // Timeline.
             widgets::timeline::TimelineWidget::new(app).render(lo.timeline, buf);
@@ -270,6 +285,18 @@ pub fn run_event_loop(
                 }
                 _ => {} // Ignore mouse events, focus events, etc.
             }
+        }
+
+        // ── playhead-change detection: auto-scroll to first changed line ─────
+        if app.playhead != last_playhead {
+            let changed = app.changed_lines_from_patch();
+            if let Some(&first_changed) = changed.iter().min() {
+                let visible = 20;
+                app.preview_scroll_target = first_changed.saturating_sub(visible / 2);
+                app.preview_scroll = app.preview_scroll_target;
+            }
+            app.cached_content = None;
+            last_playhead = app.playhead;
         }
 
         // ── drain edit sources (non-blocking) ──────────────────────────────────

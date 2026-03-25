@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::theme::Theme;
+use crate::tui::app::PreviewMode;
 use crate::tui::{App, Pane, SidebarPanel};
 
 /// All actions that a keypress can trigger.
@@ -27,6 +28,12 @@ pub enum Action {
     ToggleWatchdog,
     CycleTheme,
     CycleFocus,
+    TogglePreviewMode,
+    ScrollPreviewUp,
+    ScrollPreviewDown,
+    ZoomTimelineIn,
+    ZoomTimelineOut,
+    ZoomTimelineReset,
     SoloAgent(u8),
     Noop,
 }
@@ -81,6 +88,19 @@ pub fn map_key(key: KeyEvent) -> Action {
 
         // Theme cycling
         (KeyCode::Char('t'), KeyModifiers::NONE) => Action::CycleTheme,
+
+        // Preview mode toggle
+        (KeyCode::Char('d'), KeyModifiers::NONE) => Action::TogglePreviewMode,
+
+        // Preview scroll (when preview is focused)
+        (KeyCode::Char('j'), KeyModifiers::NONE) => Action::ScrollPreviewDown,
+        (KeyCode::Char('k'), KeyModifiers::NONE) => Action::ScrollPreviewUp,
+
+        // Timeline zoom
+        (KeyCode::Char('+'), _) => Action::ZoomTimelineIn,
+        (KeyCode::Char('='), KeyModifiers::NONE) => Action::ZoomTimelineIn,
+        (KeyCode::Char('-'), KeyModifiers::NONE) => Action::ZoomTimelineOut,
+        (KeyCode::Char('0'), KeyModifiers::NONE) => Action::ZoomTimelineReset,
 
         // Focus cycling
         (KeyCode::Tab, _) => Action::CycleFocus,
@@ -144,6 +164,40 @@ pub fn apply_action(app: &mut App, action: Action) {
         // Toggle command/operation view
         Action::ToggleCommandView => {
             app.command_view = !app.command_view;
+        }
+
+        // Toggle preview mode (file view vs diff view)
+        Action::TogglePreviewMode => {
+            app.preview_mode = match app.preview_mode {
+                PreviewMode::File => PreviewMode::Diff,
+                PreviewMode::Diff => PreviewMode::File,
+            };
+        }
+
+        // Preview scroll
+        Action::ScrollPreviewUp => {
+            if app.focused_pane == Pane::Preview && app.preview_scroll > 0 {
+                app.preview_scroll -= 1;
+                app.preview_scroll_target = app.preview_scroll;
+            }
+        }
+        Action::ScrollPreviewDown => {
+            if app.focused_pane == Pane::Preview {
+                app.preview_scroll += 1;
+                app.preview_scroll_target = app.preview_scroll;
+            }
+        }
+
+        // Timeline zoom
+        Action::ZoomTimelineIn => {
+            app.timeline_zoom = (app.timeline_zoom * 1.5).min(20.0);
+        }
+        Action::ZoomTimelineOut => {
+            app.timeline_zoom = (app.timeline_zoom / 1.5).max(1.0);
+        }
+        Action::ZoomTimelineReset => {
+            app.timeline_zoom = 1.0;
+            app.timeline_scroll = 0;
         }
 
         // Toggle showing restore-generated edits
