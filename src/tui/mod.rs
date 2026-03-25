@@ -147,6 +147,7 @@ pub fn run_tui_with_options(
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, crossterm::event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -184,6 +185,7 @@ pub fn run_tui_with_options(
         watcher.stop();
     }
     disable_raw_mode()?;
+    execute!(terminal.backend_mut(), crossterm::event::DisableMouseCapture)?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 

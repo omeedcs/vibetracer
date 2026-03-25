@@ -289,7 +289,23 @@ pub fn run_event_loop(
                         }
                     }
                 }
-                _ => {} // Ignore mouse events, focus events, etc.
+                Event::Mouse(mouse) => {
+                    use crossterm::event::MouseEventKind;
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            app.timeline_zoom = (app.timeline_zoom * 1.2).min(20.0);
+                        }
+                        MouseEventKind::ScrollDown => {
+                            app.timeline_zoom = (app.timeline_zoom / 1.2).max(1.0);
+                            if app.timeline_zoom <= 1.01 {
+                                app.timeline_zoom = 1.0;
+                                app.timeline_scroll = 0;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {} // Ignore focus events, etc.
             }
         }
 
