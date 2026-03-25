@@ -102,6 +102,30 @@ impl Widget for StatusBar<'_> {
             ));
         }
 
+        // Edit timestamp
+        if let Some(edit) = self.app.current_edit() {
+            let session_start_ms = self.app.session_start * 1000;
+            let offset_secs = ((edit.ts - session_start_ms).max(0) / 1000) as u64;
+            let m = offset_secs / 60;
+            let s = offset_secs % 60;
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled(
+                format!("@{}m{:02}s", m, s),
+                Style::default().fg(color_value),
+            ));
+            // Edit position
+            left_spans.push(Span::styled(
+                format!(" #{}/{}", self.app.playhead + 1, self.app.edits.len()),
+                Style::default().fg(color_default),
+            ));
+        }
+
+        // Preview mode indicator
+        if self.app.preview_mode == crate::tui::app::PreviewMode::Diff {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled("diff", Style::default().fg(color_accent)));
+        }
+
         // ── right side ───────────────────────────────────────────────────────
         let (conn_text, conn_color) = if self.app.connected {
             ("connected", color_connected)
