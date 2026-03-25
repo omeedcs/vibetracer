@@ -4,6 +4,7 @@ pub mod input;
 pub mod layout;
 pub mod operation;
 pub mod playhead;
+pub mod syntax;
 pub mod tailer;
 pub mod widgets;
 
