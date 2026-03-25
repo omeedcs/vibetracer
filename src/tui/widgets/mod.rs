@@ -1,4 +1,5 @@
 pub mod blast_radius_panel;
+pub mod file_view;
 pub mod help_overlay;
 pub mod preview;
 pub mod restore_confirm;
