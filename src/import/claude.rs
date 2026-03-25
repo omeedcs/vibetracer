@@ -150,6 +150,12 @@ fn extract_intent(message: &Value) -> Option<String> {
 ///
 /// Returns a `Vec<EditEvent>` sorted by timestamp.
 pub fn import_session(jsonl_path: &Path, project_root: &Path) -> Result<Vec<EditEvent>> {
+    // Use the filename stem as the agent_id (Claude session UUID).
+    let agent_id: Option<String> = jsonl_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string());
+
     let file = std::fs::File::open(jsonl_path)
         .with_context(|| format!("open session file {:?}", jsonl_path))?;
     let reader = std::io::BufReader::new(file);
@@ -175,6 +181,9 @@ pub fn import_session(jsonl_path: &Path, project_root: &Path) -> Result<Vec<Edit
 
         let ts_str = val.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
         let ts = parse_ts(ts_str);
+        // Use message index as a synthetic operation ID so edits from the same
+        // assistant turn share an operation.
+        let operation_id = Some(format!("msg-{}", i));
 
         let message = match val.get("message") {
             Some(m) => m,
@@ -286,11 +295,11 @@ pub fn import_session(jsonl_path: &Path, project_root: &Path) -> Result<Vec<Edit
                 tool: Some(tool_name.to_string()),
                 lines_added: diff_result.lines_added,
                 lines_removed: diff_result.lines_removed,
-                agent_id: None,
+                agent_id: agent_id.clone(),
                 agent_label: None,
-                operation_id: None,
-                operation_intent: None,
-                tool_name: None,
+                operation_id: operation_id.clone(),
+                operation_intent: intent.clone(),
+                tool_name: Some(tool_name.to_string()),
                 restore_id: None,
             };
 
