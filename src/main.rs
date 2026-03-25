@@ -25,6 +25,10 @@ struct Cli {
     #[arg(long, hide = true)]
     daemon_child: bool,
 
+    /// Disable auto-starting the background daemon (single-process mode)
+    #[arg(long)]
+    no_daemon: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -328,7 +332,10 @@ fn main() -> anyhow::Result<()> {
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
 
-            let options = RunOptions::default();
+            let options = RunOptions {
+                no_daemon: cli.no_daemon,
+                ..Default::default()
+            };
 
             if cli.debug {
                 let log_path = project_path.join(".vibetracer").join("debug.log");

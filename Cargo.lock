@@ -1460,6 +1460,7 @@ dependencies = [
  "dirs",
  "glob",
  "hex",
+ "libc",
  "notify",
  "notify-debouncer-mini",
  "predicates",

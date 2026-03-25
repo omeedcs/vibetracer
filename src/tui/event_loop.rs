@@ -43,14 +43,25 @@ impl Widget for BgFill {
 /// This function owns the render cycle, input handling, file-change processing,
 /// and analysis engine invocation. The caller sets up the terminal, session,
 /// recorder, watcher, and config, then hands everything in here.
+///
+/// Two source modes are supported:
+///
+/// - **No-daemon mode** (`fs_rx` + `recorder`): The TUI watches for file
+///   changes itself and uses a `Recorder` to produce edit events.
+/// - **Daemon mode** (`edit_rx`): The TUI tails the daemon's edit log for
+///   pre-built `EditEvent`s. No watcher or recorder is needed.
+///
+/// In replay mode both receivers are `None` and no new edits arrive.
 pub fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    recorder: &mut Recorder,
+    mut recorder: Option<&mut Recorder>,
     checkpoint_manager: &CheckpointManager,
-    fs_rx: &mpsc::Receiver<PathBuf>,
+    fs_rx: Option<&mpsc::Receiver<PathBuf>>,
+    edit_rx: Option<&mpsc::Receiver<EditEvent>>,
     config: &Config,
     project_path: &Path,
+    daemon_running: bool,
 ) -> Result<()> {
     // Edit count since last checkpoint (for auto-checkpoint).
     let mut edits_since_checkpoint: u32 = 0;
@@ -167,17 +178,26 @@ pub fn run_event_loop(
                         let action = input::map_key(key);
 
                         match action {
-                            input::Action::Quit | input::Action::QuitAndStopDaemon => break,
+                            input::Action::Quit => break,
+
+                            input::Action::QuitAndStopDaemon => {
+                                if daemon_running {
+                                    let _ = crate::daemon::stop_daemon(project_path);
+                                }
+                                break;
+                            }
 
                             input::Action::Help => {
                                 show_help = !show_help;
                             }
 
                             input::Action::Checkpoint => {
-                                let id = checkpoint_manager
-                                    .save(recorder.current_file_hashes().clone())?;
-                                app.checkpoint_ids.push(id);
-                                edits_since_checkpoint = 0;
+                                if let Some(ref mut rec) = recorder {
+                                    let id = checkpoint_manager
+                                        .save(rec.current_file_hashes().clone())?;
+                                    app.checkpoint_ids.push(id);
+                                    edits_since_checkpoint = 0;
+                                }
                             }
 
                             other => {
@@ -190,71 +210,90 @@ pub fn run_event_loop(
             }
         }
 
-        // ── drain file-change channel (non-blocking) ──────────────────────────
-        loop {
-            match fs_rx.try_recv() {
-                Ok(abs_path) => {
-                    if let Ok(Some(result)) =
-                        recorder.process_file_change(&abs_path, &edit_event_tx, None)
-                    {
-                        let rel_path = result.event.file.clone();
-                        let old_content = &result.old_content;
-                        let new_content = &result.new_content;
+        // ── drain edit sources (non-blocking) ──────────────────────────────────
 
-                        edited_files.insert(rel_path.clone());
-                        app.push_edit(result.event);
+        // Mode A: Daemon mode -- drain pre-built EditEvents from the tailer.
+        if let Some(rx) = edit_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(event) => {
+                        edited_files.insert(event.file.clone());
+                        app.push_edit(event);
+                        edits_since_checkpoint += 1;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            }
+        }
 
-                        // -- Run analysis engines on this edit --
+        // Mode B: No-daemon mode -- drain file-change channel and record.
+        if let (Some(rx), Some(ref mut recorder)) = (fs_rx, recorder.as_deref_mut()) {
+            loop {
+                match rx.try_recv() {
+                    Ok(abs_path) => {
+                        if let Ok(Some(result)) =
+                            recorder.process_file_change(&abs_path, &edit_event_tx, None)
+                        {
+                            let rel_path = result.event.file.clone();
+                            let old_content = &result.old_content;
+                            let new_content = &result.new_content;
 
-                        // Watchdog: check if a registered constant was modified.
-                        let alerts = watchdog.check(&rel_path, old_content, new_content);
-                        if !alerts.is_empty() {
-                            app.watchdog_alerts = alerts;
-                            app.sidebar_visible = true;
-                            app.sidebar_panel = SidebarPanel::Watchdog;
-                        }
+                            edited_files.insert(rel_path.clone());
+                            app.push_edit(result.event);
 
-                        // Sentinels: evaluate all rules that watch this file.
-                        let mut violations = Vec::new();
-                        for (name, rule) in &config.sentinels {
-                            let watches = glob::Pattern::new(&rule.watch)
-                                .map(|p| p.matches(&rel_path))
-                                .unwrap_or(false);
-                            if watches {
-                                violations.extend(sentinel_engine.evaluate(name, rule));
+                            // -- Run analysis engines on this edit --
+
+                            // Watchdog: check if a registered constant was modified.
+                            let alerts = watchdog.check(&rel_path, old_content, new_content);
+                            if !alerts.is_empty() {
+                                app.watchdog_alerts = alerts;
+                                app.sidebar_visible = true;
+                                app.sidebar_panel = SidebarPanel::Watchdog;
+                            }
+
+                            // Sentinels: evaluate all rules that watch this file.
+                            let mut violations = Vec::new();
+                            for (name, rule) in &config.sentinels {
+                                let watches = glob::Pattern::new(&rule.watch)
+                                    .map(|p| p.matches(&rel_path))
+                                    .unwrap_or(false);
+                                if watches {
+                                    violations.extend(sentinel_engine.evaluate(name, rule));
+                                }
+                            }
+                            if !violations.is_empty() {
+                                app.sentinel_violations = violations;
+                                app.sidebar_visible = true;
+                                app.sidebar_panel = SidebarPanel::Sentinels;
+                            }
+
+                            // Blast radius: check dependents of this file.
+                            let dependents = blast_tracker.get_dependents(&rel_path);
+                            if !dependents.is_empty() {
+                                let status =
+                                    blast_tracker.check_staleness(&rel_path, &edited_files);
+                                app.blast_radius_status = Some((rel_path.clone(), status));
+                                app.sidebar_visible = true;
+                                app.sidebar_panel = SidebarPanel::BlastRadius;
+                            }
+
+                            edits_since_checkpoint += 1;
+
+                            // Auto-checkpoint.
+                            if config.watch.auto_checkpoint_every > 0
+                                && edits_since_checkpoint >= config.watch.auto_checkpoint_every
+                            {
+                                let id = checkpoint_manager
+                                    .save(recorder.current_file_hashes().clone())?;
+                                app.checkpoint_ids.push(id);
+                                edits_since_checkpoint = 0;
                             }
                         }
-                        if !violations.is_empty() {
-                            app.sentinel_violations = violations;
-                            app.sidebar_visible = true;
-                            app.sidebar_panel = SidebarPanel::Sentinels;
-                        }
-
-                        // Blast radius: check dependents of this file.
-                        let dependents = blast_tracker.get_dependents(&rel_path);
-                        if !dependents.is_empty() {
-                            let status =
-                                blast_tracker.check_staleness(&rel_path, &edited_files);
-                            app.blast_radius_status = Some((rel_path.clone(), status));
-                            app.sidebar_visible = true;
-                            app.sidebar_panel = SidebarPanel::BlastRadius;
-                        }
-
-                        edits_since_checkpoint += 1;
-
-                        // Auto-checkpoint.
-                        if config.watch.auto_checkpoint_every > 0
-                            && edits_since_checkpoint >= config.watch.auto_checkpoint_every
-                        {
-                            let id = checkpoint_manager
-                                .save(recorder.current_file_hashes().clone())?;
-                            app.checkpoint_ids.push(id);
-                            edits_since_checkpoint = 0;
-                        }
                     }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
                 }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
 
