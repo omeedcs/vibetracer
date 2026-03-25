@@ -71,6 +71,8 @@ pub fn run_event_loop(
     // Track playhead to detect changes and auto-scroll to changed lines.
     let mut last_playhead: usize = app.playhead;
 
+    let mut last_play_advance = std::time::Instant::now();
+
     // Edit count since last checkpoint (for auto-checkpoint).
     let mut edits_since_checkpoint: u32 = 0;
 
@@ -183,8 +185,12 @@ pub fn run_event_loop(
             }
         })?;
 
-        // ── poll for crossterm events (100 ms timeout) ────────────────────────
-        if ct_event::poll(Duration::from_millis(100))? {
+        // ── poll for crossterm events (adaptive timeout) ──────────────────────
+        let poll_duration = match &app.playback {
+            crate::tui::PlaybackState::Playing { .. } => Duration::from_millis(16),  // ~60fps
+            _ => Duration::from_millis(100),                                          // idle
+        };
+        if ct_event::poll(poll_duration)? {
             match ct_event::read()? {
                 Event::Resize(_cols, _rows) => {
                     continue;
@@ -383,6 +389,26 @@ pub fn run_event_loop(
                     Err(mpsc::TryRecvError::Empty) => break,
                     Err(mpsc::TryRecvError::Disconnected) => break,
                 }
+            }
+        }
+
+        // Frame-rate-aware playback
+        if let crate::tui::PlaybackState::Playing { speed } = &app.playback {
+            let interval = Duration::from_millis(500 / (*speed as u64).max(1));
+            if last_play_advance.elapsed() >= interval {
+                app.scrub_right();
+                last_play_advance = std::time::Instant::now();
+            }
+        }
+
+        // Smooth scroll interpolation
+        if app.preview_scroll != app.preview_scroll_target {
+            let diff = app.preview_scroll_target as f64 - app.preview_scroll as f64;
+            let step = (diff * 0.15).round() as isize;
+            if step.unsigned_abs() < 1 {
+                app.preview_scroll = app.preview_scroll_target;
+            } else {
+                app.preview_scroll = (app.preview_scroll as isize + step).max(0) as usize;
             }
         }
 
