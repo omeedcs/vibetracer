@@ -6,6 +6,7 @@ use crate::analysis::blast_radius::DependencyStatus;
 use crate::analysis::sentinels::SentinelViolation;
 use crate::analysis::watchdog::WatchdogAlert;
 use crate::event::EditEvent;
+use crate::snapshot::store::SnapshotStore;
 use crate::theme::Theme;
 
 /// Which primary pane currently has keyboard focus.
@@ -41,6 +42,13 @@ pub struct TrackInfo {
     pub filename: String,
     pub edit_indices: Vec<usize>,
     pub stale: bool,
+}
+
+/// Whether the preview pane shows a full file or a diff.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PreviewMode {
+    File,
+    Diff,
 }
 
 /// Top-level application state for the TUI.
@@ -84,6 +92,18 @@ pub struct App {
     pub theme_name: String,
     /// When the theme was last changed (for 2s flash notification).
     pub theme_flash: Option<std::time::Instant>,
+    /// Whether to show full file content or diff in the preview pane.
+    pub preview_mode: PreviewMode,
+    /// Current scroll offset in the preview pane (rendered).
+    pub preview_scroll: usize,
+    /// Target scroll offset for smooth scrolling.
+    pub preview_scroll_target: usize,
+    /// Cached file content: (after_hash, decoded content).
+    pub cached_content: Option<(String, String)>,
+    /// Zoom factor for the timeline (1.0 = default).
+    pub timeline_zoom: f64,
+    /// Horizontal scroll offset in the timeline.
+    pub timeline_scroll: usize,
 }
 
 impl App {
@@ -121,6 +141,12 @@ impl App {
             show_restore_edits: false,
             theme_name: "dark".to_string(),
             theme_flash: None,
+            preview_mode: PreviewMode::File,
+            preview_scroll: 0,
+            preview_scroll_target: 0,
+            cached_content: None,
+            timeline_zoom: 1.0,
+            timeline_scroll: 0,
         }
     }
 
@@ -195,6 +221,74 @@ impl App {
         if let PlaybackState::Playing { .. } = self.playback {
             self.playback = PlaybackState::Playing { speed };
         }
+    }
+
+    /// Retrieve the file content for the current edit at the playhead.
+    ///
+    /// Returns `(content, filename)`. Uses `cached_content` when the hash
+    /// hasn't changed to avoid redundant disk reads.
+    pub fn current_file_content(
+        &mut self,
+        session_dir: &std::path::Path,
+    ) -> Option<(String, String)> {
+        let edit = self.edits.get(self.playhead)?;
+        let hash = edit.after_hash.clone();
+        let filename = edit.file.clone();
+
+        // Return cached value if the hash matches.
+        if let Some((ref cached_hash, ref cached_content)) = self.cached_content {
+            if *cached_hash == hash {
+                return Some((cached_content.clone(), filename));
+            }
+        }
+
+        // Retrieve from the snapshot store.
+        let store = SnapshotStore::new(session_dir.join("snapshots"));
+        let bytes = store.retrieve(&hash).ok()?;
+        let content = String::from_utf8_lossy(&bytes).into_owned();
+
+        self.cached_content = Some((hash, content.clone()));
+        Some((content, filename))
+    }
+
+    /// Parse the current edit's patch to find which lines were added.
+    ///
+    /// Returns a set of 1-based line numbers in the new file that correspond
+    /// to `+` lines in the unified diff.
+    pub fn changed_lines_from_patch(&self) -> HashSet<usize> {
+        let mut result = HashSet::new();
+        let edit = match self.current_edit() {
+            Some(e) => e,
+            None => return result,
+        };
+
+        let mut new_line: usize = 0;
+
+        for line in edit.patch.lines() {
+            if line.starts_with("@@") {
+                // Parse the `+start,count` portion of `@@ -old,count +new,count @@`
+                if let Some(plus_pos) = line.find('+') {
+                    let after_plus = &line[plus_pos + 1..];
+                    let num_str: String = after_plus
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    if let Ok(start) = num_str.parse::<usize>() {
+                        new_line = start;
+                    }
+                }
+            } else if line.starts_with('+') {
+                result.insert(new_line);
+                new_line += 1;
+            } else if line.starts_with('-') {
+                // Removed line: don't advance new-file counter.
+            } else {
+                // Context line: advance new-file counter.
+                new_line += 1;
+            }
+        }
+
+        result
     }
 }
 
