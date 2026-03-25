@@ -146,13 +146,16 @@ pub fn run_event_loop(
             }
 
             // Preview pane.
-            let content_ref = file_content_data.as_ref().map(|(c, f)| (c.as_str(), f.as_str()));
+            let content_ref = file_content_data
+                .as_ref()
+                .map(|(c, f)| (c.as_str(), f.as_str()));
             widgets::preview::PreviewPane::new(
                 app,
                 content_ref,
                 Some(&highlighter),
                 &changed_lines,
-            ).render(lo.preview, buf);
+            )
+            .render(lo.preview, buf);
 
             // Timeline.
             widgets::timeline::TimelineWidget::new(app).render(lo.timeline, buf);
@@ -187,8 +190,8 @@ pub fn run_event_loop(
 
         // ── poll for crossterm events (adaptive timeout) ──────────────────────
         let poll_duration = match &app.playback {
-            crate::tui::PlaybackState::Playing { .. } => Duration::from_millis(16),  // ~60fps
-            _ => Duration::from_millis(100),                                          // idle
+            crate::tui::PlaybackState::Playing { .. } => Duration::from_millis(16), // ~60fps
+            _ => Duration::from_millis(100),                                        // idle
         };
         if ct_event::poll(poll_duration)? {
             match ct_event::read()? {

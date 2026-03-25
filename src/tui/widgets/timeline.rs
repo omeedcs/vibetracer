@@ -229,10 +229,7 @@ impl Widget for TimelineWidget<'_> {
             }
 
             for &(ch, color) in &bar {
-                spans.push(Span::styled(
-                    ch.to_string(),
-                    Style::default().fg(color),
-                ));
+                spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
             }
 
             Line::from(spans).render(
@@ -315,9 +312,7 @@ impl Widget for TimelineWidget<'_> {
             let mut seen = std::collections::HashSet::new();
             let mut agents: Vec<(String, Color)> = Vec::new();
             for edit in &self.app.edits {
-                if let (Some(agent_id), Some(agent_label)) =
-                    (&edit.agent_id, &edit.agent_label)
-                {
+                if let (Some(agent_id), Some(agent_label)) = (&edit.agent_id, &edit.agent_label) {
                     if seen.insert(agent_id.clone()) {
                         let agent_colors = &self.app.theme.agent_colors;
                         let hash: usize = agent_id.bytes().map(|b| b as usize).sum();
@@ -332,10 +327,8 @@ impl Widget for TimelineWidget<'_> {
             }
 
             if agents.len() > 1 {
-                let mut legend_spans: Vec<Span> = vec![Span::styled(
-                    "agents  ",
-                    Style::default().fg(t.fg_muted),
-                )];
+                let mut legend_spans: Vec<Span> =
+                    vec![Span::styled("agents  ", Style::default().fg(t.fg_muted))];
                 for (label, color) in &agents {
                     legend_spans.push(Span::styled(
                         "\u{2588}\u{2588}",

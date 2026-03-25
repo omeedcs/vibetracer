@@ -9,8 +9,8 @@ use std::collections::HashSet;
 
 use crate::event::EditKind;
 use crate::theme::Theme;
-use crate::tui::syntax::{HighlightedLine, Highlighter};
 use crate::tui::App;
+use crate::tui::syntax::{HighlightedLine, Highlighter};
 
 const GUTTER_WIDTH: u16 = 6;
 
@@ -72,7 +72,9 @@ impl Widget for FileView<'_> {
         };
 
         // Highlight the content.
-        let highlighted = self.highlighter.highlight(self.filename, self.content, theme);
+        let highlighted = self
+            .highlighter
+            .highlight(self.filename, self.content, theme);
         let total_lines = highlighted.len();
 
         // Reserve 1 row for header and 1 for footer.

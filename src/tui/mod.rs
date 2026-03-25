@@ -185,7 +185,10 @@ pub fn run_tui_with_options(
         watcher.stop();
     }
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), crossterm::event::DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        crossterm::event::DisableMouseCapture
+    )?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
