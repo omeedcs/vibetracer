@@ -23,11 +23,11 @@ pub fn compute_layout(area: Rect, sidebar_visible: bool) -> AppLayout {
     // ── top-level vertical split ─────────────────────────────────────────────
     // Adapt timeline height to available space — shrink on small terminals.
     let timeline_height = if area.height < 15 {
-        3
+        4
     } else if area.height < 25 {
-        5
+        6
     } else {
-        8
+        10
     };
 
     let vertical = Layout::default()
