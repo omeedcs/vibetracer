@@ -61,6 +61,7 @@ pub fn run_event_loop(
     edit_rx: Option<&mpsc::Receiver<EditEvent>>,
     config: &Config,
     project_path: &Path,
+    session_dir: &Path,
     daemon_running: bool,
 ) -> Result<()> {
     // Edit count since last checkpoint (for auto-checkpoint).
@@ -197,6 +198,68 @@ pub fn run_event_loop(
                                         .save(rec.current_file_hashes().clone())?;
                                     app.checkpoint_ids.push(id);
                                     edits_since_checkpoint = 0;
+                                }
+                            }
+
+                            input::Action::Restore => {
+                                if let Some(edit) = app.current_edit().cloned() {
+                                    let store = crate::snapshot::store::SnapshotStore::new(
+                                        session_dir.join("snapshots"),
+                                    );
+                                    let engine = crate::restore::RestoreEngine::new(
+                                        project_path.to_path_buf(),
+                                        store,
+                                    );
+                                    let current_hash =
+                                        engine.current_hash(&edit.file).unwrap_or_default();
+                                    if let Err(e) =
+                                        engine.restore_file(&edit.file, &edit.after_hash)
+                                    {
+                                        tracing::warn!("restore failed: {}", e);
+                                    } else {
+                                        let mut restore_log =
+                                            crate::restore::restore_log::RestoreLog::new(
+                                                session_dir.join("restores.jsonl"),
+                                            );
+                                        let _ = restore_log.append(
+                                            crate::event::RestoreScope::File {
+                                                path: edit.file.clone(),
+                                                target_edit_id: edit.id,
+                                            },
+                                            vec![crate::event::RestoreFileEntry {
+                                                path: edit.file,
+                                                from_hash: current_hash,
+                                                to_hash: edit.after_hash.clone(),
+                                            }],
+                                        );
+                                    }
+                                }
+                            }
+
+                            input::Action::UndoRestore => {
+                                let restore_log =
+                                    crate::restore::restore_log::RestoreLog::new(
+                                        session_dir.join("restores.jsonl"),
+                                    );
+                                if let Ok(events) = restore_log.last_n(1) {
+                                    if let Some(last) = events.first() {
+                                        let store =
+                                            crate::snapshot::store::SnapshotStore::new(
+                                                session_dir.join("snapshots"),
+                                            );
+                                        let engine = crate::restore::RestoreEngine::new(
+                                            project_path.to_path_buf(),
+                                            store,
+                                        );
+                                        for entry in &last.files_restored {
+                                            if entry.from_hash.is_empty() {
+                                                let _ = engine.delete_file(&entry.path);
+                                            } else {
+                                                let _ = engine
+                                                    .restore_file(&entry.path, &entry.from_hash);
+                                            }
+                                        }
+                                    }
                                 }
                             }
 

@@ -171,6 +171,7 @@ pub fn run_tui_with_options(
         edit_rx_opt.as_ref(),
         &config,
         &project_path,
+        &session_dir,
         daemon_running,
     )?;
 
