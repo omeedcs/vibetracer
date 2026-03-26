@@ -4,8 +4,8 @@ use crate::event::AgentInfo;
 
 /// Tracks agents (e.g. Claude Code sessions) that have sent hook messages.
 ///
-/// Each agent gets an auto-assigned human-readable label ("claude-1",
-/// "claude-2", ...) in the order they first appear. The registry persists
+/// Each agent gets an auto-assigned human-readable label ("{tool_type}-1",
+/// "{tool_type}-2", ...) in the order they first appear. The registry persists
 /// `AgentInfo` entries that are serialized into `meta.json`.
 pub struct AgentRegistry {
     agents: HashMap<String, AgentInfo>,
@@ -22,7 +22,7 @@ impl AgentRegistry {
 
     /// Register a new agent or update an existing one.
     ///
-    /// If the agent is new, a label is auto-assigned ("claude-N").
+    /// If the agent is new, a label is auto-assigned ("{tool_type}-N").
     /// If the agent already exists, `last_seen` is updated.
     ///
     /// Returns a reference to the `AgentInfo` for this agent.
@@ -34,7 +34,7 @@ impl AgentRegistry {
                 info.last_seen = ts;
             })
             .or_insert_with(|| {
-                let label = format!("claude-{}", *next_label);
+                let label = format!("{}-{}", tool_type, *next_label);
                 *next_label += 1;
                 AgentInfo {
                     agent_id: agent_id.to_string(),
@@ -86,7 +86,7 @@ mod tests {
         let info = registry.register_or_update("pid-100", "claude-code", 1000);
 
         assert_eq!(info.agent_id, "pid-100");
-        assert_eq!(info.agent_label, "claude-1");
+        assert_eq!(info.agent_label, "claude-code-1");
         assert_eq!(info.tool_type, "claude-code");
         assert_eq!(info.first_seen, 1000);
         assert_eq!(info.last_seen, 1000);
@@ -101,9 +101,9 @@ mod tests {
         registry.register_or_update("agent-b", "claude-code", 2000);
         registry.register_or_update("agent-c", "claude-code", 3000);
 
-        assert_eq!(registry.get("agent-a").unwrap().agent_label, "claude-1");
-        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-2");
-        assert_eq!(registry.get("agent-c").unwrap().agent_label, "claude-3");
+        assert_eq!(registry.get("agent-a").unwrap().agent_label, "claude-code-1");
+        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-code-2");
+        assert_eq!(registry.get("agent-c").unwrap().agent_label, "claude-code-3");
     }
 
     #[test]
@@ -114,7 +114,7 @@ mod tests {
         registry.register_or_update("agent-a", "claude-code", 5000);
 
         let info = registry.get("agent-a").unwrap();
-        assert_eq!(info.agent_label, "claude-1"); // Label unchanged.
+        assert_eq!(info.agent_label, "claude-code-1"); // Label unchanged.
         assert_eq!(info.first_seen, 1000); // First seen unchanged.
         assert_eq!(info.last_seen, 5000); // Last seen updated.
     }
@@ -128,8 +128,8 @@ mod tests {
         registry.register_or_update("agent-a", "claude-code", 2000);
         registry.register_or_update("agent-b", "claude-code", 3000);
 
-        // agent-b should be claude-2, not claude-3.
-        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-2");
+        // agent-b should be claude-code-2, not claude-code-3.
+        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-code-2");
     }
 
     #[test]
@@ -160,13 +160,28 @@ mod tests {
 
         let agents = registry.to_vec();
         assert_eq!(agents.len(), 2);
-        assert_eq!(agents[0].agent_label, "claude-1"); // z was first registered
-        assert_eq!(agents[1].agent_label, "claude-2");
+        assert_eq!(agents[0].agent_label, "claude-code-1"); // z was first registered
+        assert_eq!(agents[1].agent_label, "claude-code-2");
     }
 
     #[test]
     fn get_unknown_returns_none() {
         let registry = AgentRegistry::new();
         assert!(registry.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn label_uses_tool_type_prefix() {
+        let mut registry = AgentRegistry::new();
+
+        let info = registry.register_or_update("cursor-abc", "cursor", 1000);
+        assert_eq!(info.agent_label, "cursor-1");
+
+        let info = registry.register_or_update("codex-def", "codex", 2000);
+        assert_eq!(info.agent_label, "codex-2");
+
+        // Claude agents still work
+        let info = registry.register_or_update("claude-ghi", "claude-code", 3000);
+        assert_eq!(info.agent_label, "claude-code-3");
     }
 }
