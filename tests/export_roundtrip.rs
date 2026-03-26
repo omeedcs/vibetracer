@@ -1,7 +1,7 @@
 use tempfile::tempdir;
 use vibetracer::export::agent_trace::export_agent_trace;
-use vibetracer::import::agent_trace::AgentTraceImporter;
 use vibetracer::import::AgentImporter;
+use vibetracer::import::agent_trace::AgentTraceImporter;
 
 #[test]
 fn agent_trace_roundtrip() {

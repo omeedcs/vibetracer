@@ -101,9 +101,18 @@ mod tests {
         registry.register_or_update("agent-b", "claude-code", 2000);
         registry.register_or_update("agent-c", "claude-code", 3000);
 
-        assert_eq!(registry.get("agent-a").unwrap().agent_label, "claude-code-1");
-        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-code-2");
-        assert_eq!(registry.get("agent-c").unwrap().agent_label, "claude-code-3");
+        assert_eq!(
+            registry.get("agent-a").unwrap().agent_label,
+            "claude-code-1"
+        );
+        assert_eq!(
+            registry.get("agent-b").unwrap().agent_label,
+            "claude-code-2"
+        );
+        assert_eq!(
+            registry.get("agent-c").unwrap().agent_label,
+            "claude-code-3"
+        );
     }
 
     #[test]
@@ -129,7 +138,10 @@ mod tests {
         registry.register_or_update("agent-b", "claude-code", 3000);
 
         // agent-b should be claude-code-2, not claude-code-3.
-        assert_eq!(registry.get("agent-b").unwrap().agent_label, "claude-code-2");
+        assert_eq!(
+            registry.get("agent-b").unwrap().agent_label,
+            "claude-code-2"
+        );
     }
 
     #[test]

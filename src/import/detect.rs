@@ -36,12 +36,7 @@ pub fn detect_agents(project_path: &Path) -> Vec<DetectedAgent> {
                 .map(|entries| {
                     entries
                         .filter_map(|e| e.ok())
-                        .any(|e| {
-                            e.path()
-                                .extension()
-                                .and_then(|ext| ext.to_str())
-                                == Some("jsonl")
-                        })
+                        .any(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
                 })
                 .unwrap_or(false);
 

@@ -55,6 +55,11 @@ mod tests {
         assert_eq!(importer.agent_name(), "mock-agent");
         assert_eq!(importer.format_version(), Some("1.0"));
         assert!(importer.can_import(Path::new("/tmp")));
-        assert!(importer.import_edits(Path::new("/tmp"), Path::new("/tmp")).unwrap().is_empty());
+        assert!(
+            importer
+                .import_edits(Path::new("/tmp"), Path::new("/tmp"))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

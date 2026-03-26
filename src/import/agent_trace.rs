@@ -102,25 +102,26 @@ impl AgentTraceImporter {
                 .unwrap_or(0);
 
             // Determine diff / line counts.
-            let (patch, lines_added, lines_removed, kind) =
-                match (&contrib.before, &contrib.after) {
-                    (_, Some(after)) => {
-                        let before_str = contrib.before.as_deref().unwrap_or("");
-                        let diff = compute_diff(before_str, after, &relative_file);
-                        let kind = if contrib.before.is_none() || contrib.before.as_deref() == Some("") {
-                            EditKind::Create
-                        } else {
-                            EditKind::Modify
-                        };
-                        (diff.patch, diff.lines_added, diff.lines_removed, kind)
-                    }
-                    _ => {
-                        // Fall back to the provided diff field.
-                        let patch = contrib.diff.clone().unwrap_or_default();
-                        let (la, lr) = count_diff_lines(&patch);
-                        (patch, la, lr, EditKind::Modify)
-                    }
-                };
+            let (patch, lines_added, lines_removed, kind) = match (&contrib.before, &contrib.after)
+            {
+                (_, Some(after)) => {
+                    let before_str = contrib.before.as_deref().unwrap_or("");
+                    let diff = compute_diff(before_str, after, &relative_file);
+                    let kind = if contrib.before.is_none() || contrib.before.as_deref() == Some("")
+                    {
+                        EditKind::Create
+                    } else {
+                        EditKind::Modify
+                    };
+                    (diff.patch, diff.lines_added, diff.lines_removed, kind)
+                }
+                _ => {
+                    // Fall back to the provided diff field.
+                    let patch = contrib.diff.clone().unwrap_or_default();
+                    let (la, lr) = count_diff_lines(&patch);
+                    (patch, la, lr, EditKind::Modify)
+                }
+            };
 
             // Determine agent_id: prefer override, then contribution field, then default.
             let agent_id = self
@@ -187,10 +188,7 @@ impl AgentImporter for AgentTraceImporter {
     fn can_import(&self, path: &Path) -> bool {
         // Accept a directory named ".agent-trace"
         if path.is_dir() {
-            return path
-                .file_name()
-                .and_then(|n| n.to_str())
-                == Some(".agent-trace");
+            return path.file_name().and_then(|n| n.to_str()) == Some(".agent-trace");
         }
         // Accept any file with a .json extension
         path.extension().and_then(|e| e.to_str()) == Some("json")
@@ -250,10 +248,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn make_trace_json(contributions: &str) -> String {
-        format!(
-            r#"{{"version":"0.1","contributions":[{}]}}"#,
-            contributions
-        )
+        format!(r#"{{"version":"0.1","contributions":[{}]}}"#, contributions)
     }
 
     #[test]
