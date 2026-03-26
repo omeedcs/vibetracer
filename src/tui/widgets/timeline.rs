@@ -102,6 +102,33 @@ impl<'a> TimelineWidget<'a> {
             format!("{m}:{s:02}")
         }
     }
+
+    /// Detect conflict zones: edit indices where 2+ agents edited the same file
+    /// within a 5-second (5000ms) window.
+    fn conflict_edit_indices(&self) -> std::collections::HashSet<usize> {
+        let mut conflicts = std::collections::HashSet::new();
+        let edits = &self.app.edits;
+
+        for i in 0..edits.len() {
+            for j in (i + 1)..edits.len() {
+                // Only check within 5s window
+                if (edits[j].ts - edits[i].ts).unsigned_abs() > 5000 {
+                    break;
+                }
+                // Same file, different agents
+                if edits[i].file == edits[j].file {
+                    let agent_i = edits[i].agent_id.as_deref();
+                    let agent_j = edits[j].agent_id.as_deref();
+                    if agent_i.is_some() && agent_j.is_some() && agent_i != agent_j {
+                        conflicts.insert(i);
+                        conflicts.insert(j);
+                    }
+                }
+            }
+        }
+
+        conflicts
+    }
 }
 
 impl Widget for TimelineWidget<'_> {
@@ -127,6 +154,7 @@ impl Widget for TimelineWidget<'_> {
         // ── bar width (area minus track name and separator) ──────────────────
         let name_and_sep = TRACK_NAME_WIDTH + SEPARATOR.len();
         let bar_width = (area.width as usize).saturating_sub(name_and_sep);
+        let conflict_indices = self.conflict_edit_indices();
 
         // Empty state -- show a subtle waiting indicator instead of nothing.
         if tracks.is_empty() {
@@ -223,7 +251,11 @@ impl Widget for TimelineWidget<'_> {
                     let col = self.edit_to_col(edit_idx, bar_width, total_edits);
                     if col < bar_width {
                         let agent_col = self.agent_color_for_edit(edit_idx);
-                        bar[col] = ('\u{2588}', agent_col.unwrap_or(color_bar_edit));
+                        if conflict_indices.contains(&edit_idx) {
+                            bar[col] = ('\u{2593}', t.accent_red);
+                        } else {
+                            bar[col] = ('\u{2588}', agent_col.unwrap_or(color_bar_edit));
+                        }
                     }
                 }
             }
