@@ -5,6 +5,7 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use crate::event::{EditEvent, EditKind};
+use crate::import::traits::AgentImporter;
 use crate::watcher::differ::compute_diff;
 
 /// Metadata about a Claude Code session discovered on disk.
@@ -14,6 +15,27 @@ pub struct ClaudeSession {
     pub project_path: String,
     pub started_at: i64,
     pub edit_count: usize,
+}
+
+/// Agent importer for Claude Code JSONL session files.
+pub struct ClaudeImporter;
+
+impl AgentImporter for ClaudeImporter {
+    fn agent_name(&self) -> &str {
+        "claude-code"
+    }
+
+    fn format_version(&self) -> Option<&str> {
+        Some("jsonl-v1")
+    }
+
+    fn can_import(&self, path: &Path) -> bool {
+        path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+    }
+
+    fn import_edits(&self, path: &Path, project_root: &Path) -> Result<Vec<EditEvent>> {
+        import_session(path, project_root)
+    }
 }
 
 /// Convert a filesystem path to Claude's hyphen-separated directory name.
@@ -375,5 +397,25 @@ mod tests {
     fn test_parse_ts_invalid() {
         let ts = parse_ts("not-a-timestamp");
         assert_eq!(ts, 0);
+    }
+
+    #[test]
+    fn claude_importer_trait_impl() {
+        use crate::import::AgentImporter;
+
+        let importer = ClaudeImporter;
+        assert_eq!(importer.agent_name(), "claude-code");
+        assert_eq!(importer.format_version(), Some("jsonl-v1"));
+
+        // can_import should return true for .jsonl files
+        let tmp = tempdir().unwrap();
+        let jsonl_path = tmp.path().join("session.jsonl");
+        std::fs::write(&jsonl_path, "").unwrap();
+        assert!(importer.can_import(&jsonl_path));
+
+        // can_import should return false for non-jsonl files
+        let txt_path = tmp.path().join("session.txt");
+        std::fs::write(&txt_path, "").unwrap();
+        assert!(!importer.can_import(&txt_path));
     }
 }
