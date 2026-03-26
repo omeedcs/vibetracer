@@ -271,6 +271,10 @@ pub fn run_event_loop(
                                     let id = checkpoint_manager
                                         .save(rec.current_file_hashes().clone())?;
                                     app.checkpoint_ids.push(id);
+                                    app.show_toast(
+                                        format!("checkpoint #{}", id),
+                                        crate::tui::app::ToastStyle::Success,
+                                    );
                                     edits_since_checkpoint = 0;
                                 }
                             }
@@ -301,10 +305,14 @@ pub fn run_event_loop(
                                                 target_edit_id: edit.id,
                                             },
                                             vec![crate::event::RestoreFileEntry {
-                                                path: edit.file,
+                                                path: edit.file.clone(),
                                                 from_hash: current_hash,
                                                 to_hash: edit.after_hash.clone(),
                                             }],
+                                        );
+                                        app.show_toast(
+                                            format!("restored {}", edit.file),
+                                            crate::tui::app::ToastStyle::Success,
                                         );
                                     }
                                 }
@@ -333,6 +341,10 @@ pub fn run_event_loop(
                                         }
                                     }
                                 }
+                                app.show_toast(
+                                    "restore undone".to_string(),
+                                    crate::tui::app::ToastStyle::Info,
+                                );
                             }
 
                             other => {
@@ -344,14 +356,43 @@ pub fn run_event_loop(
                 Event::Mouse(mouse) => {
                     use crossterm::event::MouseEventKind;
                     match mouse.kind {
-                        MouseEventKind::ScrollUp => {
-                            app.timeline_zoom = (app.timeline_zoom * 1.2).min(20.0);
-                        }
-                        MouseEventKind::ScrollDown => {
-                            app.timeline_zoom = (app.timeline_zoom / 1.2).max(1.0);
-                            if app.timeline_zoom <= 1.01 {
-                                app.timeline_zoom = 1.0;
-                                app.timeline_scroll = 0;
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                            let is_up = matches!(mouse.kind, MouseEventKind::ScrollUp);
+
+                            let in_preview = app.last_layout.as_ref()
+                                .map(|lo| {
+                                    mouse.row >= lo.preview.y
+                                        && mouse.row < lo.preview.y + lo.preview.height
+                                        && mouse.column >= lo.preview.x
+                                        && mouse.column < lo.preview.x + lo.preview.width
+                                })
+                                .unwrap_or(false);
+
+                            let in_timeline = app.last_layout.as_ref()
+                                .map(|lo| {
+                                    mouse.row >= lo.timeline.y
+                                        && mouse.row < lo.timeline.y + lo.timeline.height
+                                })
+                                .unwrap_or(false);
+
+                            if in_preview {
+                                if is_up && app.preview_scroll > 0 {
+                                    app.preview_scroll = app.preview_scroll.saturating_sub(3);
+                                    app.preview_scroll_target = app.preview_scroll;
+                                } else if !is_up {
+                                    app.preview_scroll += 3;
+                                    app.preview_scroll_target = app.preview_scroll;
+                                }
+                            } else if in_timeline {
+                                if is_up {
+                                    app.timeline_zoom = (app.timeline_zoom * 1.2).min(20.0);
+                                } else {
+                                    app.timeline_zoom = (app.timeline_zoom / 1.2).max(1.0);
+                                    if app.timeline_zoom <= 1.01 {
+                                        app.timeline_zoom = 1.0;
+                                        app.timeline_scroll = 0;
+                                    }
+                                }
                             }
                         }
                         _ => {}

@@ -119,9 +119,30 @@ pub fn map_key(key: KeyEvent) -> Action {
 pub fn apply_action(app: &mut App, action: Action) {
     match action {
         Action::Quit | Action::QuitAndStopDaemon => app.should_quit = true,
-        Action::TogglePlay => app.toggle_play(),
-        Action::ScrubLeft => app.scrub_left(),
-        Action::ScrubRight => app.scrub_right(),
+        Action::TogglePlay => {
+            app.toggle_play();
+            app.playback_flash = Some(std::time::Instant::now());
+        }
+        Action::ScrubLeft => {
+            let prev_file = app.current_edit().map(|e| e.file.clone());
+            app.scrub_left();
+            let new_file = app.current_edit().map(|e| e.file.clone());
+            if prev_file != new_file {
+                if let Some(f) = new_file {
+                    app.track_flash = Some((f, std::time::Instant::now()));
+                }
+            }
+        }
+        Action::ScrubRight => {
+            let prev_file = app.current_edit().map(|e| e.file.clone());
+            app.scrub_right();
+            let new_file = app.current_edit().map(|e| e.file.clone());
+            if prev_file != new_file {
+                if let Some(f) = new_file {
+                    app.track_flash = Some((f, std::time::Instant::now()));
+                }
+            }
+        }
 
         // Per-file scrub: detach the current file's track and scrub it.
         Action::FileScrubLeft => {
@@ -203,6 +224,12 @@ pub fn apply_action(app: &mut App, action: Action) {
         // Toggle showing restore-generated edits
         Action::ToggleRestoreEdits => {
             app.show_restore_edits = !app.show_restore_edits;
+            let msg = if app.show_restore_edits {
+                "restore edits: visible"
+            } else {
+                "restore edits: hidden"
+            };
+            app.show_toast(msg.to_string(), crate::tui::app::ToastStyle::Info);
         }
 
         // Cycle through theme presets
