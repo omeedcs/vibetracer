@@ -6,6 +6,7 @@ pub mod checkpoint;
 pub mod config;
 pub mod daemon;
 pub mod event;
+pub mod export;
 pub mod hook;
 pub mod import;
 pub mod recorder;

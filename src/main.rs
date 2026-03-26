@@ -56,6 +56,17 @@ enum Commands {
         #[arg(long)]
         edit_id: u64,
     },
+    /// Export a session to external formats (Agent Trace JSON, git notes)
+    Export {
+        /// Output format
+        #[arg(long, value_enum)]
+        format: vibetracer::export::ExportFormat,
+        /// Session ID (from `vibetracer sessions`)
+        session_id: String,
+        /// Output file path (default: stdout for agent-trace, git note on HEAD for git-notes)
+        #[arg(long)]
+        output: Option<String>,
+    },
     /// Manage the background recorder daemon
     Daemon {
         #[command(subcommand)]
@@ -385,6 +396,38 @@ fn main() -> anyhow::Result<()> {
 
             engine.restore_file(&file, hash)?;
             println!("restored {} to state before edit {}", file, edit_id);
+        }
+
+        // ── Export: export a session to external formats ─────────────────────
+        Some(Commands::Export {
+            format,
+            session_id,
+            output,
+        }) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+            let sessions_dir = project_path.join(".vibetracer").join("sessions");
+            let edit_log_path = sessions_dir.join(&session_id).join("edits.jsonl");
+            if !edit_log_path.exists() {
+                anyhow::bail!("no edit log found for session {}", session_id);
+            }
+            let edits = EditLog::read_all(&edit_log_path)?;
+            match format {
+                vibetracer::export::ExportFormat::AgentTrace => {
+                    let output_path = output.as_deref().map(std::path::Path::new);
+                    vibetracer::export::agent_trace::export_agent_trace_to_path(
+                        &edits,
+                        &session_id,
+                        output_path,
+                    )?;
+                }
+                vibetracer::export::ExportFormat::GitNotes => {
+                    vibetracer::export::git_notes::export_git_notes(
+                        &edits,
+                        &project_path,
+                        output.as_deref(),
+                    )?;
+                }
+            }
         }
 
         // ── Default: run live TUI ──────────────────────────────────────────────
