@@ -64,7 +64,7 @@ impl Widget for StatusBar<'_> {
         let color_speed: Color = t.accent_purple;
         let color_accent: Color = t.accent_warm;
 
-        let sep = Span::styled(" | ", Style::default().fg(color_separator));
+        let sep = Span::styled(" \u{2502} ", Style::default().fg(color_separator));
 
         // ── left side ────────────────────────────────────────────────────────
         let elapsed = self.elapsed_str();
@@ -144,6 +144,18 @@ impl Widget for StatusBar<'_> {
 
         let mut right_spans: Vec<Span> = Vec::new();
 
+        if self.app.toast_active() {
+            if let Some(ref msg) = self.app.toast_message {
+                let toast_color = match self.app.toast_style {
+                    crate::tui::app::ToastStyle::Info => t.fg,
+                    crate::tui::app::ToastStyle::Success => t.accent_green,
+                    crate::tui::app::ToastStyle::Warning => t.accent_red,
+                };
+                right_spans.push(Span::styled(msg.clone(), Style::default().fg(toast_color)));
+                right_spans.push(sep.clone());
+            }
+        }
+
         // Theme name flash (shown for 2s after theme change)
         if self.theme_flash_active() {
             right_spans.push(Span::styled(
@@ -156,15 +168,21 @@ impl Widget for StatusBar<'_> {
         right_spans.push(Span::styled(conn_text, Style::default().fg(conn_color)));
         right_spans.push(sep.clone());
 
+        let pb_flashing = self.app.playback_flash
+            .map(|t| t.elapsed().as_millis() < 500)
+            .unwrap_or(false);
+
         match &self.app.playback {
             PlaybackState::Playing { speed } => {
+                let color = if pb_flashing { color_accent } else { color_speed };
                 right_spans.push(Span::styled(
                     format!("{speed}x"),
-                    Style::default().fg(color_speed),
+                    Style::default().fg(color),
                 ));
             }
             _ => {
-                right_spans.push(Span::styled(pb_text, Style::default().fg(pb_color)));
+                let color = if pb_flashing { color_accent } else { pb_color };
+                right_spans.push(Span::styled(pb_text, Style::default().fg(color)));
             }
         }
 
@@ -178,6 +196,31 @@ impl Widget for StatusBar<'_> {
             .iter()
             .map(|s| s.content.len() as u16)
             .sum();
+
+        // Overflow protection: truncate left side if it would overlap the right side.
+        let left_width: u16 = left_line.spans.iter().map(|s| s.content.len() as u16).sum();
+        let available = area.width.saturating_sub(right_width + 2);
+
+        let left_line = if left_width > available {
+            let mut total: u16 = 0;
+            let mut truncated_spans = Vec::new();
+            for span in left_line.spans {
+                let span_len = span.content.len() as u16;
+                if total + span_len > available {
+                    let remaining = available.saturating_sub(total) as usize;
+                    if remaining > 0 {
+                        let truncated: String = span.content.chars().take(remaining).collect();
+                        truncated_spans.push(Span::styled(truncated, span.style));
+                    }
+                    break;
+                }
+                total += span_len;
+                truncated_spans.push(span);
+            }
+            Line::from(truncated_spans)
+        } else {
+            left_line
+        };
 
         // Render left side.
         left_line.render(area, buf);
