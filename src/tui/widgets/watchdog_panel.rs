@@ -1,19 +1,13 @@
+use crate::theme::Theme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Widget,
 };
 
 use crate::analysis::watchdog::WatchdogAlert;
-
-const COLOR_HEADER: Color = Color::Rgb(196, 120, 91);
-const COLOR_DEFAULT: Color = Color::Rgb(160, 168, 183);
-const COLOR_DIM: Color = Color::Rgb(58, 62, 71);
-const COLOR_SEPARATOR: Color = Color::Rgb(42, 46, 55);
-const COLOR_LABEL: Color = Color::Rgb(138, 117, 96);
-const COLOR_CRITICAL: Color = Color::Rgb(220, 100, 80);
 
 /// Render a single line at (area.x, y) if y < area.y + area.height.
 fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
@@ -34,11 +28,12 @@ fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
 /// Watchdog panel showing constant modification alerts.
 pub struct WatchdogPanel<'a> {
     pub alerts: &'a [WatchdogAlert],
+    pub theme: &'a Theme,
 }
 
 impl<'a> WatchdogPanel<'a> {
-    pub fn new(alerts: &'a [WatchdogAlert]) -> Self {
-        Self { alerts }
+    pub fn new(alerts: &'a [WatchdogAlert], theme: &'a Theme) -> Self {
+        Self { alerts, theme }
     }
 }
 
@@ -48,6 +43,13 @@ impl Widget for WatchdogPanel<'_> {
             return;
         }
 
+        let area = Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: area.height,
+        };
+
         let mut row = area.y;
         let max_y = area.y + area.height;
 
@@ -55,7 +57,7 @@ impl Widget for WatchdogPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "CONSTANT MODIFIED",
-                Style::default().fg(COLOR_HEADER),
+                Style::default().fg(self.theme.accent_warm),
             )]),
             area,
             row,
@@ -71,7 +73,7 @@ impl Widget for WatchdogPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "─".repeat(area.width as usize),
-                Style::default().fg(COLOR_SEPARATOR),
+                Style::default().fg(self.theme.separator),
             )]),
             area,
             row,
@@ -84,7 +86,7 @@ impl Widget for WatchdogPanel<'_> {
                 render_at(
                     Line::from(vec![Span::styled(
                         "  no alerts",
-                        Style::default().fg(COLOR_DIM),
+                        Style::default().fg(self.theme.fg_dim),
                     )]),
                     area,
                     row,
@@ -97,9 +99,9 @@ impl Widget for WatchdogPanel<'_> {
         for alert in self.alerts {
             let is_critical = alert.severity.to_lowercase() == "critical";
             let text_color = if is_critical {
-                COLOR_CRITICAL
+                self.theme.accent_red
             } else {
-                COLOR_DEFAULT
+                self.theme.fg
             };
 
             // File
@@ -108,7 +110,7 @@ impl Widget for WatchdogPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("| ", Style::default().fg(COLOR_DIM)),
+                    Span::styled("| ", Style::default().fg(self.theme.fg_dim)),
                     Span::styled(alert.file.clone(), Style::default().fg(text_color)),
                 ]),
                 area,
@@ -123,11 +125,11 @@ impl Widget for WatchdogPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled("pattern: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled("pattern: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(
                         alert.constant_pattern.clone(),
-                        Style::default().fg(COLOR_DIM),
+                        Style::default().fg(self.theme.fg_dim),
                     ),
                 ]),
                 area,
@@ -142,10 +144,10 @@ impl Widget for WatchdogPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled("expected: ", Style::default().fg(COLOR_LABEL)),
-                    Span::styled(alert.expected.clone(), Style::default().fg(COLOR_DEFAULT)),
-                    Span::styled("  actual: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled("expected: ", Style::default().fg(self.theme.accent_warm)),
+                    Span::styled(alert.expected.clone(), Style::default().fg(self.theme.fg)),
+                    Span::styled("  actual: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(alert.actual.clone(), Style::default().fg(text_color)),
                 ]),
                 area,
@@ -160,8 +162,8 @@ impl Widget for WatchdogPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled("severity: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled("severity: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(alert.severity.clone(), Style::default().fg(text_color)),
                 ]),
                 area,
@@ -173,7 +175,10 @@ impl Widget for WatchdogPanel<'_> {
             // Blank line between alerts
             if row < max_y {
                 render_at(
-                    Line::from(vec![Span::styled("|", Style::default().fg(COLOR_DIM))]),
+                    Line::from(vec![Span::styled(
+                        "|",
+                        Style::default().fg(self.theme.fg_dim),
+                    )]),
                     area,
                     row,
                     buf,

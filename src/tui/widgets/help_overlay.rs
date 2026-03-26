@@ -1,16 +1,11 @@
+use crate::theme::Theme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Widget},
 };
-
-const COLOR_KEY: Color = Color::Rgb(90, 101, 119);
-const COLOR_DESC: Color = Color::Rgb(160, 168, 183);
-const COLOR_BG: Color = Color::Rgb(15, 17, 21);
-const COLOR_BORDER: Color = Color::Rgb(30, 34, 42);
-const COLOR_SECTION: Color = Color::Rgb(138, 117, 96);
 
 const MAX_WIDTH: u16 = 52;
 const MAX_HEIGHT: u16 = 30;
@@ -52,9 +47,17 @@ const KEYBINDINGS: &[(&str, &str)] = &[
 ];
 
 /// A centered overlay that renders all keybindings.
-pub struct HelpOverlay;
+pub struct HelpOverlay<'a> {
+    pub theme: &'a Theme,
+}
 
-impl Widget for HelpOverlay {
+impl<'a> HelpOverlay<'a> {
+    pub fn new(theme: &'a Theme) -> Self {
+        Self { theme }
+    }
+}
+
+impl Widget for HelpOverlay<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Compute centered bounding box.
         let width = MAX_WIDTH.min(area.width);
@@ -76,7 +79,7 @@ impl Widget for HelpOverlay {
         let block = Block::default()
             .title(" keybindings ")
             .borders(Borders::ALL)
-            .style(Style::default().bg(COLOR_BG).fg(COLOR_BORDER));
+            .style(Style::default().bg(self.theme.bg).fg(self.theme.separator));
 
         let inner = block.inner(overlay_area);
         block.render(overlay_area, buf);
@@ -106,7 +109,7 @@ impl Widget for HelpOverlay {
                         "",
                         width = (key_col_width + gap) as usize
                     )),
-                    Span::styled(*desc, Style::default().fg(COLOR_SECTION)),
+                    Span::styled(*desc, Style::default().fg(self.theme.accent_warm)),
                 ]);
                 line.render(row_area, buf);
             } else {
@@ -114,9 +117,9 @@ impl Widget for HelpOverlay {
                 let key_str = format!("{:>width$}", key, width = key_col_width as usize);
 
                 let line = Line::from(vec![
-                    Span::styled(key_str, Style::default().fg(COLOR_KEY)),
+                    Span::styled(key_str, Style::default().fg(self.theme.fg_muted)),
                     Span::raw(format!("{:width$}", "", width = gap as usize)),
-                    Span::styled(*desc, Style::default().fg(COLOR_DESC)),
+                    Span::styled(*desc, Style::default().fg(self.theme.fg)),
                 ]);
 
                 line.render(row_area, buf);

@@ -1,19 +1,13 @@
+use crate::theme::Theme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Widget,
 };
 
 use crate::analysis::blast_radius::DependencyStatus;
-
-const COLOR_HEADER: Color = Color::Rgb(138, 117, 96);
-const COLOR_DEFAULT: Color = Color::Rgb(160, 168, 183);
-const COLOR_DIM: Color = Color::Rgb(58, 62, 71);
-const COLOR_STALE: Color = Color::Rgb(158, 90, 90);
-const COLOR_UPDATED: Color = Color::Rgb(90, 158, 111);
-const COLOR_SEPARATOR: Color = Color::Rgb(42, 46, 55);
 
 /// Render a single line at (area.x, y) if y < area.y + area.height.
 fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
@@ -35,13 +29,15 @@ fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
 pub struct BlastRadiusPanel<'a> {
     pub source_file: &'a str,
     pub status: &'a DependencyStatus,
+    pub theme: &'a Theme,
 }
 
 impl<'a> BlastRadiusPanel<'a> {
-    pub fn new(source_file: &'a str, status: &'a DependencyStatus) -> Self {
+    pub fn new(source_file: &'a str, status: &'a DependencyStatus, theme: &'a Theme) -> Self {
         Self {
             source_file,
             status,
+            theme,
         }
     }
 }
@@ -52,6 +48,13 @@ impl Widget for BlastRadiusPanel<'_> {
             return;
         }
 
+        let area = Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: area.height,
+        };
+
         let mut row = area.y;
         let max_y = area.y + area.height;
 
@@ -59,7 +62,7 @@ impl Widget for BlastRadiusPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "BLAST RADIUS",
-                Style::default().fg(COLOR_HEADER),
+                Style::default().fg(self.theme.accent_warm),
             )]),
             area,
             row,
@@ -75,7 +78,7 @@ impl Widget for BlastRadiusPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "─".repeat(area.width as usize),
-                Style::default().fg(COLOR_SEPARATOR),
+                Style::default().fg(self.theme.separator),
             )]),
             area,
             row,
@@ -93,7 +96,7 @@ impl Widget for BlastRadiusPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 format!("{} changed -- {} dependents:", self.source_file, total),
-                Style::default().fg(COLOR_DEFAULT),
+                Style::default().fg(self.theme.fg),
             )]),
             area,
             row,
@@ -108,8 +111,8 @@ impl Widget for BlastRadiusPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("  ! ", Style::default().fg(COLOR_STALE)),
-                    Span::styled(file.clone(), Style::default().fg(COLOR_STALE)),
+                    Span::styled("  ! ", Style::default().fg(self.theme.accent_red)),
+                    Span::styled(file.clone(), Style::default().fg(self.theme.accent_red)),
                 ]),
                 area,
                 row,
@@ -125,8 +128,8 @@ impl Widget for BlastRadiusPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("  . ", Style::default().fg(COLOR_UPDATED)),
-                    Span::styled(file.clone(), Style::default().fg(COLOR_UPDATED)),
+                    Span::styled("  . ", Style::default().fg(self.theme.accent_green)),
+                    Span::styled(file.clone(), Style::default().fg(self.theme.accent_green)),
                 ]),
                 area,
                 row,
@@ -142,8 +145,8 @@ impl Widget for BlastRadiusPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("  - ", Style::default().fg(COLOR_DIM)),
-                    Span::styled(file.clone(), Style::default().fg(COLOR_DIM)),
+                    Span::styled("  - ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled(file.clone(), Style::default().fg(self.theme.fg_dim)),
                 ]),
                 area,
                 row,
@@ -157,7 +160,7 @@ impl Widget for BlastRadiusPanel<'_> {
             render_at(
                 Line::from(vec![Span::styled(
                     "  no dependents declared",
-                    Style::default().fg(COLOR_DIM),
+                    Style::default().fg(self.theme.fg_dim),
                 )]),
                 area,
                 row,

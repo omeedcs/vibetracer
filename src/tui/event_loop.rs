@@ -21,9 +21,6 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-// ─── keybindings bar muted color (fallback for non-themed spans) ──────────────
-const COLOR_MUTED: Color = Color::Rgb(70, 75, 85);
-
 /// Render a solid background block over the entire terminal area using the given color.
 struct BgFill(Color);
 impl Widget for BgFill {
@@ -122,7 +119,7 @@ pub fn run_event_loop(
                 let msg = "terminal too small";
                 let x = area.x + area.width.saturating_sub(msg.len() as u16) / 2;
                 let y = area.y + area.height / 2;
-                buf.set_string(x, y, msg, Style::default().fg(Color::Rgb(158, 90, 90)));
+                buf.set_string(x, y, msg, Style::default().fg(app.theme.accent_red));
                 return;
             }
 
@@ -165,7 +162,7 @@ pub fn run_event_loop(
                 match app.sidebar_panel {
                     SidebarPanel::BlastRadius => {
                         if let Some((ref source, ref status)) = app.blast_radius_status {
-                            widgets::blast_radius_panel::BlastRadiusPanel::new(source, status)
+                            widgets::blast_radius_panel::BlastRadiusPanel::new(source, status, &app.theme)
                                 .render(sidebar_rect, buf);
                         } else {
                             let msg = "no blast radius data";
@@ -173,16 +170,16 @@ pub fn run_event_loop(
                                 sidebar_rect.x + 1,
                                 sidebar_rect.y + 1,
                                 msg,
-                                Style::default().fg(Color::Rgb(58, 62, 71)),
+                                Style::default().fg(app.theme.fg_dim),
                             );
                         }
                     }
                     SidebarPanel::Sentinels => {
-                        widgets::sentinel_panel::SentinelPanel::new(&app.sentinel_violations)
+                        widgets::sentinel_panel::SentinelPanel::new(&app.sentinel_violations, &app.theme)
                             .render(sidebar_rect, buf);
                     }
                     SidebarPanel::Watchdog => {
-                        widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts)
+                        widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts, &app.theme)
                             .render(sidebar_rect, buf);
                     }
                 }
@@ -216,30 +213,27 @@ pub fn run_event_loop(
             widgets::timeline::TimelineWidget::new(app).render(lo.timeline, buf);
 
             // Keybindings bar.
+            let kb_sep = Span::styled(" \u{2502} ", Style::default().fg(app.theme.separator));
+            let kb_gap = Span::styled("  ", Style::default());
+            let kb_key = |k: &str| Span::styled(k.to_string(), Style::default().fg(app.theme.fg));
+            let kb_desc = |d: &str| Span::styled(d.to_string(), Style::default().fg(app.theme.fg_muted));
+
             let kb_line = Line::from(vec![
-                Span::styled("b", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" blast radius", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("i", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" sentinels", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("w", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" watchdog", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("t", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" theme", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("g", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" commands", Style::default().fg(COLOR_MUTED)),
-                Span::styled(" | ", Style::default().fg(COLOR_MUTED)),
-                Span::styled("?", Style::default().fg(Color::Rgb(138, 143, 152))),
-                Span::styled(" help", Style::default().fg(COLOR_MUTED)),
+                Span::styled(" ", Style::default()),
+                kb_key("b"), kb_desc(" blast"), kb_sep.clone(),
+                kb_key("i"), kb_desc(" sentinel"), kb_sep.clone(),
+                kb_key("w"), kb_desc(" watchdog"),
+                kb_gap.clone(),
+                kb_key("t"), kb_desc(" theme"), kb_sep.clone(),
+                kb_key("g"), kb_desc(" commands"),
+                kb_gap.clone(),
+                kb_key("?"), kb_desc(" help"),
             ]);
             kb_line.render(lo.keybindings, buf);
 
             // Help overlay (on top of everything).
             if show_help {
-                widgets::help_overlay::HelpOverlay.render(area, buf);
+                widgets::help_overlay::HelpOverlay::new(&app.theme).render(area, buf);
             }
         })?;
 

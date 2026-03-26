@@ -1,18 +1,13 @@
+use crate::theme::Theme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Widget,
 };
 
 use crate::analysis::sentinels::SentinelViolation;
-
-const COLOR_HEADER: Color = Color::Rgb(158, 90, 90);
-const COLOR_DEFAULT: Color = Color::Rgb(160, 168, 183);
-const COLOR_DIM: Color = Color::Rgb(58, 62, 71);
-const COLOR_SEPARATOR: Color = Color::Rgb(42, 46, 55);
-const COLOR_LABEL: Color = Color::Rgb(138, 117, 96);
 
 /// Render a single line at (area.x, y) if y < area.y + area.height.
 fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
@@ -33,11 +28,12 @@ fn render_at(line: Line, area: Rect, y: u16, buf: &mut Buffer) {
 /// Sentinel panel showing invariant violations.
 pub struct SentinelPanel<'a> {
     pub violations: &'a [SentinelViolation],
+    pub theme: &'a Theme,
 }
 
 impl<'a> SentinelPanel<'a> {
-    pub fn new(violations: &'a [SentinelViolation]) -> Self {
-        Self { violations }
+    pub fn new(violations: &'a [SentinelViolation], theme: &'a Theme) -> Self {
+        Self { violations, theme }
     }
 }
 
@@ -47,6 +43,13 @@ impl Widget for SentinelPanel<'_> {
             return;
         }
 
+        let area = Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: area.height,
+        };
+
         let mut row = area.y;
         let max_y = area.y + area.height;
 
@@ -54,7 +57,7 @@ impl Widget for SentinelPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "SENTINEL",
-                Style::default().fg(COLOR_HEADER),
+                Style::default().fg(self.theme.accent_red),
             )]),
             area,
             row,
@@ -70,7 +73,7 @@ impl Widget for SentinelPanel<'_> {
         render_at(
             Line::from(vec![Span::styled(
                 "─".repeat(area.width as usize),
-                Style::default().fg(COLOR_SEPARATOR),
+                Style::default().fg(self.theme.separator),
             )]),
             area,
             row,
@@ -83,7 +86,7 @@ impl Widget for SentinelPanel<'_> {
                 render_at(
                     Line::from(vec![Span::styled(
                         "  no violations",
-                        Style::default().fg(COLOR_DIM),
+                        Style::default().fg(self.theme.fg_dim),
                     )]),
                     area,
                     row,
@@ -100,10 +103,10 @@ impl Widget for SentinelPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("| ", Style::default().fg(COLOR_DIM)),
+                    Span::styled("| ", Style::default().fg(self.theme.fg_dim)),
                     Span::styled(
                         violation.rule_name.clone(),
-                        Style::default().fg(COLOR_HEADER),
+                        Style::default().fg(self.theme.accent_red),
                     ),
                 ]),
                 area,
@@ -118,10 +121,10 @@ impl Widget for SentinelPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
                     Span::styled(
                         violation.description.clone(),
-                        Style::default().fg(COLOR_DEFAULT),
+                        Style::default().fg(self.theme.fg),
                     ),
                 ]),
                 area,
@@ -136,16 +139,16 @@ impl Widget for SentinelPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled("a: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled("a: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(
                         violation.value_a.clone(),
-                        Style::default().fg(COLOR_DEFAULT),
+                        Style::default().fg(self.theme.fg),
                     ),
-                    Span::styled("  b: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("  b: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(
                         violation.value_b.clone(),
-                        Style::default().fg(COLOR_DEFAULT),
+                        Style::default().fg(self.theme.fg),
                     ),
                 ]),
                 area,
@@ -160,11 +163,11 @@ impl Widget for SentinelPanel<'_> {
             }
             render_at(
                 Line::from(vec![
-                    Span::styled("|   ", Style::default().fg(COLOR_DIM)),
-                    Span::styled("assert: ", Style::default().fg(COLOR_LABEL)),
+                    Span::styled("|   ", Style::default().fg(self.theme.fg_dim)),
+                    Span::styled("assert: ", Style::default().fg(self.theme.accent_warm)),
                     Span::styled(
                         violation.assertion.clone(),
-                        Style::default().fg(COLOR_DEFAULT),
+                        Style::default().fg(self.theme.fg),
                     ),
                 ]),
                 area,
@@ -176,7 +179,10 @@ impl Widget for SentinelPanel<'_> {
             // Blank line between violations
             if row < max_y {
                 render_at(
-                    Line::from(vec![Span::styled("|", Style::default().fg(COLOR_DIM))]),
+                    Line::from(vec![Span::styled(
+                        "|",
+                        Style::default().fg(self.theme.fg_dim),
+                    )]),
                     area,
                     row,
                     buf,
