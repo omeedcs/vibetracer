@@ -61,7 +61,6 @@ impl PreviewPane<'_> {
         };
 
         let t = &self.app.theme;
-        let color_header: Color = t.fg_muted;
         let color_header_value: Color = t.fg;
         let color_intent: Color = t.accent_warm;
         let color_add: Color = t.accent_green;
@@ -71,13 +70,17 @@ impl PreviewPane<'_> {
         let max_y = area.y + area.height;
         let mut row = area.y;
 
-        // Header: "edit #{id} {filename}"
+        // Header: merged format with filename, diff label, and line counts
         render_at(
             Line::from(vec![
-                Span::styled("edit #", Style::default().fg(color_header)),
-                Span::styled(edit.id.to_string(), Style::default().fg(color_header_value)),
-                Span::styled("  ", Style::default().fg(color_header)),
-                Span::styled(edit.file.clone(), Style::default().fg(color_header_value)),
+                Span::styled(" ", Style::default()),
+                Span::styled(edit.file.clone(), Style::default().fg(color_header_value).add_modifier(ratatui::style::Modifier::BOLD)),
+                Span::styled(" \u{2502} ", Style::default().fg(t.separator)),
+                Span::styled("diff", Style::default().fg(t.accent_warm)),
+                Span::styled(" \u{2502} ", Style::default().fg(t.separator)),
+                Span::styled(format!("+{}", edit.lines_added), Style::default().fg(color_add)),
+                Span::styled(" ", Style::default()),
+                Span::styled(format!("-{}", edit.lines_removed), Style::default().fg(color_remove)),
             ]),
             area,
             row,
@@ -101,51 +104,61 @@ impl PreviewPane<'_> {
             }
         }
 
-        // Diff lines.
+        // Diff lines with line numbers.
+        let mut old_line: usize = 0;
+        let mut new_line: usize = 0;
+
         for diff_line in edit.patch.lines() {
             if row >= max_y {
                 break;
             }
-            let color = if diff_line.starts_with('+') {
-                color_add
+
+            if diff_line.starts_with("@@") {
+                if let Some(minus_pos) = diff_line.find('-') {
+                    let after_minus = &diff_line[minus_pos + 1..];
+                    let num_str: String = after_minus.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    old_line = num_str.parse::<usize>().unwrap_or(0);
+                }
+                if let Some(plus_pos) = diff_line.find('+') {
+                    let after_plus = &diff_line[plus_pos + 1..];
+                    let num_str: String = after_plus.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    new_line = num_str.parse::<usize>().unwrap_or(0);
+                }
+
+                render_at(
+                    Line::from(vec![
+                        Span::styled(format!("{:>5} ", ""), Style::default().fg(t.fg_dim)),
+                        Span::styled(diff_line.to_string(), Style::default().fg(color_hunk)),
+                    ]),
+                    area, row, buf,
+                );
+                row += 1;
+                continue;
+            }
+
+            let (gutter, color) = if diff_line.starts_with('+') {
+                let g = format!("{:>5} ", new_line);
+                new_line += 1;
+                (g, color_add)
             } else if diff_line.starts_with('-') {
-                color_remove
-            } else if diff_line.starts_with("@@") {
-                color_hunk
+                let g = format!("{:>5} ", old_line);
+                old_line += 1;
+                (g, color_remove)
             } else {
-                Color::Reset
+                let g = format!("{:>5} ", new_line);
+                old_line += 1;
+                new_line += 1;
+                (g, Color::Reset)
             };
 
             render_at(
-                Line::from(vec![Span::styled(
-                    diff_line.to_string(),
-                    Style::default().fg(color),
-                )]),
-                area,
-                row,
-                buf,
+                Line::from(vec![
+                    Span::styled(gutter, Style::default().fg(t.fg_dim)),
+                    Span::styled(diff_line.to_string(), Style::default().fg(color)),
+                ]),
+                area, row, buf,
             );
             row += 1;
-        }
-
-        // Footer: "+{added} -{removed}"
-        if row < max_y {
-            render_at(
-                Line::from(vec![
-                    Span::styled(
-                        format!("+{}", edit.lines_added),
-                        Style::default().fg(color_add),
-                    ),
-                    Span::styled("  ", Style::default().fg(color_header)),
-                    Span::styled(
-                        format!("-{}", edit.lines_removed),
-                        Style::default().fg(color_remove),
-                    ),
-                ]),
-                area,
-                row,
-                buf,
-            );
         }
     }
 }

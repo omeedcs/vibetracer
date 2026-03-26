@@ -77,16 +77,29 @@ impl Widget for FileView<'_> {
             .highlight(self.filename, self.content, theme);
         let total_lines = highlighted.len();
 
-        // Reserve 1 row for header and 1 for footer.
+        // Reserve 1 row for header, 0 for footer.
         let header_rows: u16 = 1;
-        let footer_rows: u16 = 1;
+        let footer_rows: u16 = 0;
         let body_height = area.height.saturating_sub(header_rows + footer_rows) as usize;
 
+        let scroll = self.app.preview_scroll;
+
+        let scroll_pct = if total_lines <= body_height {
+            100
+        } else {
+            let max_scroll = total_lines.saturating_sub(body_height);
+            if max_scroll == 0 { 100 } else { (scroll.min(max_scroll) * 100) / max_scroll }
+        };
+
         // -- Header --
-        let header_line = Line::from(vec![Span::styled(
-            format!(" {}", self.filename),
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-        )]);
+        let header_line = Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(self.filename, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(" \u{2502} ", Style::default().fg(theme.separator)),
+            Span::styled(format!("{} lines", total_lines), Style::default().fg(theme.fg_muted)),
+            Span::styled(" \u{2502} ", Style::default().fg(theme.separator)),
+            Span::styled(format!("{}%", scroll_pct), Style::default().fg(theme.fg_muted)),
+        ]);
         header_line.render(
             Rect {
                 x: area.x,
@@ -98,7 +111,6 @@ impl Widget for FileView<'_> {
         );
 
         // -- Body: syntax-highlighted lines with gutter --
-        let scroll = self.app.preview_scroll;
         let content_width = area.width.saturating_sub(GUTTER_WIDTH + 1); // +1 for separator space
 
         for row_idx in 0..body_height {
@@ -136,8 +148,13 @@ impl Widget for FileView<'_> {
             } else {
                 theme.fg_dim
             };
+            let gutter_bg = if is_changed {
+                change_tint(theme.accent_green)
+            } else {
+                Color::Reset
+            };
             let gutter_text = format!("{:>width$} ", line_num, width = (GUTTER_WIDTH - 1) as usize);
-            let gutter_span = Span::styled(gutter_text, Style::default().fg(gutter_color));
+            let gutter_span = Span::styled(gutter_text, Style::default().fg(gutter_color).bg(gutter_bg));
 
             // Build the content spans from highlighted segments.
             let hl_line: &HighlightedLine = &highlighted[line_idx];
@@ -185,32 +202,32 @@ impl Widget for FileView<'_> {
             );
         }
 
-        // -- Footer --
-        let footer_y = area.y + area.height - 1;
-        let scroll_pct = if total_lines <= body_height {
-            100
-        } else {
+        // -- Scrollbar (right edge) --
+        if total_lines > body_height {
+            let scrollbar_x = area.x + area.width - 1;
+            let scrollbar_height = body_height;
+            let thumb_size = ((body_height as f64 / total_lines as f64) * scrollbar_height as f64)
+                .max(1.0) as usize;
             let max_scroll = total_lines.saturating_sub(body_height);
-            if max_scroll == 0 {
-                100
+            let thumb_pos = if max_scroll == 0 {
+                0
             } else {
-                (scroll.min(max_scroll) * 100) / max_scroll
+                (scroll.min(max_scroll) * scrollbar_height.saturating_sub(thumb_size)) / max_scroll
+            };
+
+            for i in 0..scrollbar_height {
+                let y = area.y + header_rows + i as u16;
+                if y >= area.y + area.height {
+                    break;
+                }
+                let (ch, color) = if i >= thumb_pos && i < thumb_pos + thumb_size {
+                    ("\u{2503}", theme.accent_warm)
+                } else {
+                    ("\u{2502}", theme.bar_empty)
+                };
+                buf.set_string(scrollbar_x, y, ch, Style::default().fg(color));
             }
-        };
-        let footer_text = format!(" {} lines  {}%", total_lines, scroll_pct);
-        let footer_line = Line::from(vec![Span::styled(
-            footer_text,
-            Style::default().fg(theme.fg_dim),
-        )]);
-        footer_line.render(
-            Rect {
-                x: area.x,
-                y: footer_y,
-                width: area.width,
-                height: 1,
-            },
-            buf,
-        );
+        }
     }
 }
 
@@ -243,10 +260,10 @@ fn render_empty_file(area: Rect, buf: &mut Buffer, theme: &Theme) {
 fn change_tint(color: Color) -> Color {
     match color {
         Color::Rgb(r, g, b) => Color::Rgb(
-            ((r as u16) * 40 / 255) as u8,
-            ((g as u16) * 40 / 255) as u8,
-            ((b as u16) * 40 / 255) as u8,
+            ((r as u16) * 55 / 255) as u8,
+            ((g as u16) * 55 / 255) as u8,
+            ((b as u16) * 55 / 255) as u8,
         ),
-        _ => Color::Rgb(6, 24, 7), // fallback muted green
+        _ => Color::Rgb(8, 33, 10),
     }
 }
