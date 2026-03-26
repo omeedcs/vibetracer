@@ -205,6 +205,33 @@ fn main() -> anyhow::Result<()> {
             } else {
                 println!("hint: add .vibetracer/ to your .gitignore");
             }
+
+            // Detect agents
+            let agents = vibetracer::import::detect::detect_agents(&project_path);
+            if agents.is_empty() {
+                println!("  no AI agents detected (start an agent and run init again)");
+            } else {
+                println!("  detected agents:");
+                for agent in &agents {
+                    println!("    - {} ({})", agent.name, agent.log_path.display());
+                }
+            }
+
+            // Configure git notes.rewriteRef for git-notes export compatibility
+            let notes_configured = std::process::Command::new("git")
+                .args(["config", "--get", "notes.rewriteRef"])
+                .current_dir(&project_path)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+            if !notes_configured {
+                let _ = std::process::Command::new("git")
+                    .args(["config", "notes.rewriteRef", "refs/notes/commits"])
+                    .current_dir(&project_path)
+                    .output();
+                println!("  configured git notes.rewriteRef for export compatibility");
+            }
         }
 
         // ── Sessions: list past sessions ───────────────────────────────────────
