@@ -1,6 +1,6 @@
 [package]
 name = "vibetracer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits"
 license = "MIT"
