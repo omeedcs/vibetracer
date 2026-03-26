@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 
@@ -9,8 +9,8 @@ use super::types::JsonRpcNotification;
 
 pub fn handle_subscribe(
     arguments: &serde_json::Value,
-    project_path: &PathBuf,
-    _sessions_dir: &PathBuf,
+    project_path: &Path,
+    _sessions_dir: &Path,
     writer: &mut StdioWriter,
 ) -> Result<serde_json::Value> {
     let session_id = arguments

@@ -5,7 +5,7 @@ pub mod tools;
 pub mod transport;
 pub mod types;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde_json::json;
@@ -114,8 +114,8 @@ fn dispatch_tool(
     ctx: &HandlerContext,
     tool_name: &str,
     arguments: &serde_json::Value,
-    project_path: &PathBuf,
-    sessions_dir: &PathBuf,
+    project_path: &Path,
+    sessions_dir: &Path,
     writer: &mut StdioWriter,
 ) -> Result<serde_json::Value> {
     match tool_name {

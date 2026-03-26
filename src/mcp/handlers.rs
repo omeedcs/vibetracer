@@ -149,7 +149,7 @@ impl HandlerContext {
         let frame_id = args
             .get("frame_id")
             .and_then(|v| v.as_u64())
-            .context("frame_id is required")? as u64;
+            .context("frame_id is required")?;
 
         let edits_path = self.edits_path(session_id)?;
         let all_edits = EditLog::read_all(&edits_path)?;
