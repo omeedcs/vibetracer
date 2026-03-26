@@ -38,6 +38,20 @@ impl Widget for BgFill {
     }
 }
 
+/// Render a horizontal separator line filling the given area with `─`.
+struct HorizontalSep {
+    color: Color,
+    focused: bool,
+    focus_color: Color,
+}
+impl Widget for HorizontalSep {
+    fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let color = if self.focused { self.focus_color } else { self.color };
+        let line = "─".repeat(area.width as usize);
+        buf.set_string(area.x, area.y, &line, Style::default().fg(color));
+    }
+}
+
 /// Run the main TUI event loop.
 ///
 /// This function owns the render cycle, input handling, file-change processing,
@@ -114,6 +128,35 @@ pub fn run_event_loop(
 
             let lo = layout::compute_layout(area, app.sidebar_visible);
 
+            // Store layout for mouse routing.
+            app.last_layout = Some(lo.clone());
+
+            // Determine which pane is focused for border highlighting.
+            let focus_color = app.theme.accent_warm;
+            let sep_color = app.theme.separator;
+
+            // Render horizontal separators between zones.
+            HorizontalSep {
+                color: sep_color,
+                focused: app.focused_pane == crate::tui::Pane::Preview,
+                focus_color,
+            }
+            .render(lo.sep_after_status, buf);
+
+            HorizontalSep {
+                color: sep_color,
+                focused: app.focused_pane == crate::tui::Pane::Timeline,
+                focus_color,
+            }
+            .render(lo.sep_after_main, buf);
+
+            HorizontalSep {
+                color: sep_color,
+                focused: false,
+                focus_color,
+            }
+            .render(lo.sep_after_timeline, buf);
+
             // Status bar.
             widgets::status_bar::StatusBar::new(app).render(lo.status_bar, buf);
 
@@ -141,6 +184,18 @@ pub fn run_event_loop(
                     SidebarPanel::Watchdog => {
                         widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts)
                             .render(sidebar_rect, buf);
+                    }
+                }
+            }
+
+            // Vertical separator between preview and sidebar.
+            if let Some(sidebar_rect) = lo.sidebar {
+                let sep_x = sidebar_rect.x.saturating_sub(1);
+                let focused = app.focused_pane == crate::tui::Pane::Sidebar;
+                let color = if focused { focus_color } else { sep_color };
+                for y in lo.main_area.y..lo.main_area.y + lo.main_area.height {
+                    if sep_x >= lo.main_area.x && sep_x < lo.main_area.x + lo.main_area.width {
+                        buf.set_string(sep_x, y, "\u{2502}", Style::default().fg(color));
                     }
                 }
             }
