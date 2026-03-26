@@ -1,6 +1,6 @@
 # vibetracer
 
-Real-time tracing, replaying, and restoring of AI coding assistant edits. A background daemon records every change. A TUI lets you scrub through time, inspect diffs, and surgically restore files to any prior state.
+Real-time tracing, replaying, and restoring of AI coding assistant edits. A background daemon records every change. A TUI lets you scrub through time, inspect diffs, and surgically restore files to any prior state. Cross-agent support for Claude Code, Cursor, and Codex CLI. Export sessions as Agent Trace JSON or git-ai compatible git notes.
 
 ```
         _ _          _
@@ -52,7 +52,7 @@ Toggle between **edit view** (every individual file change) and **command view**
 
 ### Multi-Agent Tracking
 
-Multiple Claude Code sessions editing the same project are tracked independently. Each agent gets a distinct color on the timeline. Filter by agent. Restore everything one agent did in a time range.
+Multiple AI agents editing the same project are tracked independently. Claude Code, Cursor, and Codex CLI are all supported. Each agent gets a distinct color on the timeline. When two agents edit the same file within 5 seconds, the timeline shows conflict indicators. Filter by agent. Restore everything one agent did in a time range.
 
 ### Restore System
 
@@ -88,9 +88,27 @@ Cycle themes at runtime with `t`. No restart needed.
 preset = "tokyo-night"
 ```
 
-### Claude Code Integration
+### Cross-Agent Import
 
-When `.claude/` exists, vibetracer auto-registers a `PostToolUse` hook to capture tool metadata and intent context. Each edit is enriched with the agent ID, operation grouping, and tool name. Works in passive mode (filesystem-only) when no AI tool is detected.
+Import sessions from multiple AI coding assistants:
+
+- **Claude Code** -- JSONL session files with full tool metadata and intent context
+- **Cursor** -- Agent Trace JSON format (`.agent-trace/` directory)
+- **Codex CLI** -- Agent Trace compatible output
+
+When Claude Code's `.claude/` directory exists, vibetracer auto-registers a `PostToolUse` hook to capture tool metadata and intent context. Works in passive mode (filesystem-only) when no AI tool is detected.
+
+### Export to Ecosystem Formats
+
+Export your temporal recordings to formats the provenance ecosystem consumes:
+
+```bash
+vibetracer export --format agent-trace <session-id>     # Agent Trace JSON
+vibetracer export --format agent-trace <session-id> --output trace.json
+vibetracer export --format git-notes <session-id>        # git-ai compatible git notes
+```
+
+Agent Trace JSON is the vendor-neutral format used by Cursor and the git-ai ecosystem. Git notes attach authorship logs directly to commits, compatible with `git-ai blame`.
 
 ### Session Management
 
@@ -143,6 +161,12 @@ vibetracer replay <session-id>
 
 # List past sessions
 vibetracer sessions
+
+# Export session as Agent Trace JSON
+vibetracer export --format agent-trace <session-id>
+
+# Export session as git-ai git notes
+vibetracer export --format git-notes <session-id>
 
 # Initialize config with smart auto-detection
 vibetracer init
@@ -225,7 +249,8 @@ vibetracer
   analysis/          Watchdog, sentinels, blast radius (run in TUI)
   tui/               Terminal UI (app state, event loop, playheads, widgets)
   hook/              Claude Code hook registration
-  import/            Claude Code JSONL session import
+  import/            Multi-agent session import (Claude Code, Cursor, Codex CLI)
+  export/            Session export (Agent Trace JSON, git-ai git notes)
 ```
 
 Data is stored in `.vibetracer/` within your project directory. Add it to `.gitignore`.

@@ -2,7 +2,7 @@
 name = "vibetracer"
 version = "0.3.0"
 edition = "2024"
-description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits"
+description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits. Cross-agent support (Claude Code, Cursor, Codex). Export to Agent Trace JSON and git-ai git notes."
 license = "MIT"
 repository = "https://github.com/omeedcs/vibetracer"
 
