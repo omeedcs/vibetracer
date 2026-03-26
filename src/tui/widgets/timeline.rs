@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::tui::App;
 
-const TRACK_NAME_WIDTH: usize = 14;
+const TRACK_NAME_WIDTH: usize = 20;
 const SEPARATOR: &str = " ";
 
 /// Horizontal per-file track timeline widget.
@@ -37,22 +37,33 @@ impl<'a> TimelineWidget<'a> {
             .collect()
     }
 
-    /// Shorten a filename for display: if longer than `TRACK_NAME_WIDTH` chars,
-    /// use the basename; truncate further if still too long.
+    /// Shorten a filename for display: tries parent/file.rs, then basename, then truncated.
     fn display_name(filename: &str) -> String {
         if filename.len() <= TRACK_NAME_WIDTH {
-            return format!("{:<width$}", filename, width = TRACK_NAME_WIDTH);
+            return format!("{:>width$}", filename, width = TRACK_NAME_WIDTH);
         }
-        // Try basename.
-        let base = std::path::Path::new(filename)
+        let path = std::path::Path::new(filename);
+        let base = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(filename);
+        let parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str());
 
-        if base.len() <= TRACK_NAME_WIDTH {
-            format!("{:<width$}", base, width = TRACK_NAME_WIDTH)
+        let with_parent = if let Some(p) = parent {
+            format!("{}/{}", p, base)
         } else {
-            format!("{:.width$}", base, width = TRACK_NAME_WIDTH)
+            base.to_string()
+        };
+
+        if with_parent.len() <= TRACK_NAME_WIDTH {
+            format!("{:>width$}", with_parent, width = TRACK_NAME_WIDTH)
+        } else if base.len() <= TRACK_NAME_WIDTH {
+            format!("{:>width$}", base, width = TRACK_NAME_WIDTH)
+        } else {
+            format!("{:>width$.width$}", base, width = TRACK_NAME_WIDTH)
         }
     }
 
@@ -139,7 +150,6 @@ impl Widget for TimelineWidget<'_> {
 
         let t = &self.app.theme;
         let color_track_name: Color = t.fg;
-        let color_track_stale: Color = t.accent_red;
         let color_bar_edit: Color = t.bar_filled;
         let color_bar_empty: Color = t.bar_empty;
         let color_playhead: Color = t.accent_warm;
@@ -198,9 +208,11 @@ impl Widget for TimelineWidget<'_> {
                     "0:00".to_string()
                 };
 
-                // Write the label starting at this column, truncated to bar boundary.
+                // Write the label prefixed with a tick mark (┬), starting at this column,
+                // truncated to bar boundary.
                 let write_x = bar_x + col as u16;
-                for (i, ch) in label.chars().enumerate() {
+                let prefixed = format!("\u{252C}{}", label);
+                for (i, ch) in prefixed.chars().enumerate() {
                     let cx = write_x + i as u16;
                     if cx < area.x + area.width {
                         buf.set_string(cx, row, ch.to_string(), Style::default().fg(t.fg_dim));
@@ -225,8 +237,9 @@ impl Widget for TimelineWidget<'_> {
 
             let (name_text, name_color) = if track.stale {
                 let display = Self::display_name(&track.filename);
-                let truncated: String = display.chars().take(TRACK_NAME_WIDTH.min(8)).collect();
-                (format!("{} stale", truncated), color_track_stale)
+                let trimmed = display.trim_start();
+                let padded = format!("{:>width$}", format!("{}*", trimmed), width = TRACK_NAME_WIDTH);
+                (padded, t.fg_dim)
             } else if is_detached {
                 // Mark detached tracks with a subtle indicator.
                 let display = Self::display_name(&track.filename);
@@ -235,16 +248,46 @@ impl Widget for TimelineWidget<'_> {
                 (Self::display_name(&track.filename), color_track_name)
             };
 
+            // Determine active/flash state for background highlight.
+            let is_active = self.app.current_edit()
+                .map(|e| e.file == track.filename)
+                .unwrap_or(false);
+
+            let is_flashing = self.app.track_flash
+                .as_ref()
+                .map(|(f, t)| f == &track.filename && t.elapsed().as_millis() < 300)
+                .unwrap_or(false);
+
+            let row_bg = if is_active || is_flashing {
+                Some(change_tint(t.accent_warm))
+            } else {
+                None
+            };
+
+            // Build name span with optional background.
+            let name_style = if let Some(bg) = row_bg {
+                Style::default().fg(name_color).bg(bg)
+            } else {
+                Style::default().fg(name_color)
+            };
+
+            // Build separator span with optional background.
+            let sep_style = if let Some(bg) = row_bg {
+                Style::default().bg(bg)
+            } else {
+                Style::default()
+            };
+
             let mut spans: Vec<Span> = vec![
                 Span::styled(
                     format!("{:<width$}", name_text, width = TRACK_NAME_WIDTH),
-                    Style::default().fg(name_color),
+                    name_style,
                 ),
-                Span::raw(SEPARATOR),
+                Span::styled(SEPARATOR, sep_style),
             ];
 
             // Build the bar as a Vec<(char, Color)> initialized to empty.
-            let mut bar: Vec<(char, Color)> = vec![('\u{2591}', color_bar_empty); bar_width];
+            let mut bar: Vec<(char, Color)> = vec![('\u{2500}', color_bar_empty); bar_width];
 
             if bar_width > 0 && total_edits > 0 {
                 for &edit_idx in &track.edit_indices {
@@ -252,16 +295,21 @@ impl Widget for TimelineWidget<'_> {
                     if col < bar_width {
                         let agent_col = self.agent_color_for_edit(edit_idx);
                         if conflict_indices.contains(&edit_idx) {
-                            bar[col] = ('\u{2593}', t.accent_red);
+                            bar[col] = ('!', t.accent_red);
                         } else {
-                            bar[col] = ('\u{2588}', agent_col.unwrap_or(color_bar_edit));
+                            bar[col] = ('\u{258C}', agent_col.unwrap_or(color_bar_edit));
                         }
                     }
                 }
             }
 
             for &(ch, color) in &bar {
-                spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
+                let bar_style = if let Some(bg) = row_bg {
+                    Style::default().fg(color).bg(bg)
+                } else {
+                    Style::default().fg(color)
+                };
+                spans.push(Span::styled(ch.to_string(), bar_style));
             }
 
             Line::from(spans).render(
@@ -298,7 +346,7 @@ impl Widget for TimelineWidget<'_> {
             let ph_x = area.x + name_and_sep as u16 + playhead_col as u16;
             if ph_x < area.x + area.width {
                 for track_row in track_row_start..track_row_end {
-                    buf.set_string(ph_x, track_row, "\u{2502}", Style::default().fg(ph_color));
+                    buf.set_string(ph_x, track_row, "\u{2503}", Style::default().fg(ph_color));
                 }
             }
         }
@@ -312,7 +360,9 @@ impl Widget for TimelineWidget<'_> {
 
             for cell in 0..bar_width {
                 let ch = if cell == playhead_col {
-                    "\u{2502}"
+                    "\u{2503}"
+                } else if cell >= playhead_col.saturating_sub(1) && cell <= playhead_col + 1 {
+                    "\u{2501}"
                 } else {
                     "\u{2500}"
                 };
@@ -383,5 +433,16 @@ impl Widget for TimelineWidget<'_> {
                 );
             }
         }
+    }
+}
+
+fn change_tint(color: Color) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            ((r as u16) * 40 / 255) as u8,
+            ((g as u16) * 40 / 255) as u8,
+            ((b as u16) * 40 / 255) as u8,
+        ),
+        _ => Color::Rgb(10, 8, 6),
     }
 }
