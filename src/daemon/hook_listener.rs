@@ -18,6 +18,11 @@ pub enum SocketMessage {
     RestoreEnd { restore_id: u64 },
     /// A status query -- the stream is passed so the daemon can write back.
     StatusQuery(UnixStream),
+    /// A request to subscribe to live edit notifications.
+    Subscribe {
+        session_id: String,
+        stream: Option<UnixStream>,
+    },
     /// A request to shut down the daemon.
     Stop,
 }
@@ -175,6 +180,15 @@ fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMes
             Ok(SocketMessage::RestoreStart { restore_id, files })
         }
 
+        "subscribe" => {
+            let session_id = value
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .context("subscribe message missing 'session_id'")?
+                .to_string();
+            Ok(SocketMessage::Subscribe { session_id, stream })
+        }
+
         "restore_end" => {
             let restore_id = value
                 .get("restore_id")
@@ -252,6 +266,18 @@ mod tests {
                 assert_eq!(restore_id, 42);
             }
             _ => panic!("expected RestoreEnd"),
+        }
+    }
+
+    #[test]
+    fn parse_subscribe_message() {
+        let json = r#"{"type":"subscribe","session_id":"test-session"}"#;
+        let msg = parse_message(json, None).unwrap();
+        match msg {
+            SocketMessage::Subscribe { session_id, .. } => {
+                assert_eq!(session_id, "test-session");
+            }
+            _ => panic!("expected Subscribe message"),
         }
     }
 

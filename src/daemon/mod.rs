@@ -88,6 +88,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     // We need mutable access to recorder in the loop.
     let mut recorder = recorder;
     let mut edit_count: u64 = 0;
+    let mut subscribers: Vec<std::os::unix::net::UnixStream> = Vec::new();
 
     // 7. Main loop.
     loop {
@@ -142,6 +143,14 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                     let _ = writeln!(stream, "{}", status);
                 }
 
+                SocketMessage::Subscribe { session_id, stream } => {
+                    if session_id == session.id {
+                        if let Some(s) = stream {
+                            subscribers.push(s);
+                        }
+                    }
+                }
+
                 SocketMessage::Stop => {
                     should_stop = true;
                 }
@@ -185,7 +194,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
             };
 
             match recorder.process_file_change(&abs_path, &event_tx, enrichment.as_ref()) {
-                Ok(Some(_result)) => {
+                Ok(Some(result)) => {
                     edit_count += 1;
                     // Increment agent edit count if enrichment came from a hook.
                     if let Some(ref enrich) = enrichment {
@@ -193,6 +202,22 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                             let ts = Utc::now().timestamp_millis();
                             agent_registry.increment_edit_count(agent_id, ts);
                         }
+                    }
+
+                    // Broadcast to subscribers.
+                    if !subscribers.is_empty() {
+                        let notification = serde_json::json!({
+                            "type": "edit_notification",
+                            "event": result.event,
+                        });
+                        let msg = format!(
+                            "{}\n",
+                            serde_json::to_string(&notification).unwrap_or_default()
+                        );
+                        subscribers.retain(|s| {
+                            // Try to write; remove subscriber if write fails
+                            (&*s).write_all(msg.as_bytes()).is_ok()
+                        });
                     }
                 }
                 Ok(None) => {
