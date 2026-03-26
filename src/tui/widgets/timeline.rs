@@ -27,12 +27,24 @@ impl<'a> TimelineWidget<'a> {
             .tracks
             .iter()
             .filter(|t| {
-                // If a track is soloed, only show that track.
+                // File-level solo filter.
                 if let Some(solo) = &self.app.solo_track {
                     return &t.filename == solo;
                 }
                 // Skip muted tracks.
-                !self.app.muted_tracks.contains(&t.filename)
+                if self.app.muted_tracks.contains(&t.filename) {
+                    return false;
+                }
+                // Agent-level solo filter: only show tracks with edits from this agent.
+                if let Some(ref solo_agent) = self.app.solo_agent {
+                    return t.edit_indices.iter().any(|&idx| {
+                        self.app.edits.get(idx)
+                            .and_then(|e| e.agent_id.as_ref())
+                            .map(|a| a == solo_agent)
+                            .unwrap_or(false)
+                    });
+                }
+                true
             })
             .collect()
     }

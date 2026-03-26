@@ -205,11 +205,9 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
     }
 
     let logo = [
-        r"       _ _          _                          ",
-        r"__   _(_) |__   ___| |_ _ __ __ _  ___ ___ _ __",
-        r"\ \ / / | '_ \ / _ \ __| '__/ _` |/ __/ _ \ '__|",
-        r" \ V /| | |_) |  __/ |_| | | (_| | (_|  __/ |  ",
-        r"  \_/ |_|_.__/ \___|\__|_|  \__,_|\___\___|_|  ",
+        r"        _ _         _                        ",
+        r" __   _(_) |__  ___| |_ _ __ __ _  ___ ___ _ __",
+        r" \_/ |_|_.__/\___|\__|_| \__,_|\___\___|_|  ",
     ];
 
     let hints = [
@@ -228,7 +226,7 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
         ("?", "all keybindings"),
     ];
 
-    let color_warm = theme.accent_warm;
+    let color_warm = theme.fg_dim;
     let color_subtle = theme.fg_dim;
     let color_dim = theme.separator;
     let color_empty = theme.fg_muted;

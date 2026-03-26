@@ -297,8 +297,25 @@ pub fn apply_action(app: &mut App, action: Action) {
 
         // Solo agent: filter timeline to only show edits from agent N.
         // (Stored as solo_track with a special prefix so the timeline can distinguish)
-        Action::SoloAgent(_n) => {
-            // Implementation deferred to integration phase -- sets a flag on App.
+        Action::SoloAgent(n) => {
+            let mut seen = std::collections::HashSet::new();
+            let mut agents: Vec<String> = Vec::new();
+            for edit in &app.edits {
+                if let Some(ref agent_id) = edit.agent_id {
+                    if seen.insert(agent_id.clone()) {
+                        agents.push(agent_id.clone());
+                    }
+                }
+            }
+
+            let idx = (n as usize).saturating_sub(1);
+            if let Some(agent_id) = agents.get(idx) {
+                if app.solo_agent.as_ref() == Some(agent_id) {
+                    app.solo_agent = None;
+                } else {
+                    app.solo_agent = Some(agent_id.clone());
+                }
+            }
         }
 
         // These actions require external handling; nothing to do in the state machine.
