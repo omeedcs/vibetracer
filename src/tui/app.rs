@@ -8,6 +8,7 @@ use crate::analysis::watchdog::WatchdogAlert;
 use crate::event::EditEvent;
 use crate::snapshot::store::SnapshotStore;
 use crate::theme::Theme;
+use crate::tui::layout::AppLayout;
 
 /// Which primary pane currently has keyboard focus.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,14 @@ pub struct TrackInfo {
 pub enum PreviewMode {
     File,
     Diff,
+}
+
+/// Style for toast notifications displayed in the status bar.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToastStyle {
+    Info,
+    Success,
+    Warning,
 }
 
 /// Top-level application state for the TUI.
@@ -104,6 +113,20 @@ pub struct App {
     pub timeline_zoom: f64,
     /// Horizontal scroll offset in the timeline.
     pub timeline_scroll: usize,
+    /// Toast notification message (displayed in status bar, auto-dismissed).
+    pub toast_message: Option<String>,
+    /// Toast notification style (determines color).
+    pub toast_style: ToastStyle,
+    /// When the toast was triggered (for auto-dismiss timing).
+    pub toast_time: Option<std::time::Instant>,
+    /// Agent solo filter: only show edits from this agent_id.
+    pub solo_agent: Option<String>,
+    /// Last computed layout (for mouse-aware scroll routing).
+    pub last_layout: Option<AppLayout>,
+    /// Flash timer for active track highlight on scrub.
+    pub track_flash: Option<(String, std::time::Instant)>,
+    /// Flash timer for playback state change.
+    pub playback_flash: Option<std::time::Instant>,
 }
 
 impl App {
@@ -147,6 +170,13 @@ impl App {
             cached_content: None,
             timeline_zoom: 1.0,
             timeline_scroll: 0,
+            toast_message: None,
+            toast_style: ToastStyle::Info,
+            toast_time: None,
+            solo_agent: None,
+            last_layout: None,
+            track_flash: None,
+            playback_flash: None,
         }
     }
 
@@ -289,6 +319,20 @@ impl App {
         }
 
         result
+    }
+
+    /// Display a toast notification in the status bar for 2 seconds.
+    pub fn show_toast(&mut self, message: String, style: ToastStyle) {
+        self.toast_message = Some(message);
+        self.toast_style = style;
+        self.toast_time = Some(std::time::Instant::now());
+    }
+
+    /// Check if the toast is still active (within 2 seconds).
+    pub fn toast_active(&self) -> bool {
+        self.toast_time
+            .map(|t| t.elapsed().as_secs() < 2)
+            .unwrap_or(false)
     }
 }
 
