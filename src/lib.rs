@@ -9,6 +9,7 @@ pub mod event;
 pub mod export;
 pub mod hook;
 pub mod import;
+pub mod mcp;
 pub mod recorder;
 pub mod restore;
 pub mod session;
