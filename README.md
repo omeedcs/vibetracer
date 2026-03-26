@@ -1,6 +1,6 @@
 # vibetracer
 
-Real-time tracing, replaying, and restoring of AI coding assistant edits. A background daemon records every change. A TUI lets you scrub through time, inspect diffs, and surgically restore files to any prior state. Cross-agent support for Claude Code, Cursor, and Codex CLI. Export sessions as Agent Trace JSON or git-ai compatible git notes.
+Real-time tracing, replaying, and restoring of AI coding assistant edits. A background daemon records every change. A TUI lets you scrub through time, inspect diffs, and surgically restore files to any prior state. An MCP server exposes trace data back to AI assistants for self-correction. Cross-agent support for Claude Code, Cursor, and Codex CLI. Export sessions as Agent Trace JSON or git-ai compatible git notes.
 
 ```
         _ _          _
@@ -112,9 +112,13 @@ Agent Trace JSON is the vendor-neutral format used by Cursor and the git-ai ecos
 
 ### MCP Server (AI Self-Correction)
 
-vibetracer includes an MCP (Model Context Protocol) server that exposes trace data to AI coding assistants, enabling them to scrub through edit history and fix their own mistakes.
+vibetracer includes an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that exposes trace data back to AI coding assistants. This creates a feedback loop: the AI makes edits, vibetracer records them, and when something breaks, the AI can scrub through its own edit history to pinpoint which change introduced the regression -- like `git bisect` but at sub-commit granularity.
 
-Add to your `.claude.json` or MCP client configuration:
+```bash
+vibetracer mcp   # start stdio JSON-RPC server
+```
+
+Add to your MCP client configuration (e.g., `.claude.json`, Cursor settings, or any MCP-compatible tool):
 
 ```json
 {
@@ -127,17 +131,21 @@ Add to your `.claude.json` or MCP client configuration:
 }
 ```
 
+**Available tools:**
+
 | Tool | Description |
 |------|-------------|
-| `list_sessions` | List recorded trace sessions |
-| `get_timeline` | Get the edit timeline for a session |
-| `get_frame` | Get file state at any point in the timeline |
-| `diff_frames` | Diff between any two points |
-| `search_edits` | Find frames where a pattern was modified |
-| `get_regression_window` | Get candidate frames for bisecting a regression |
-| `subscribe_edits` | Subscribe to live edit notifications |
+| `list_sessions` | List recorded trace sessions with metadata and edit counts |
+| `get_timeline` | Get the edit timeline for a session (paginated, filterable by file glob) |
+| `get_frame` | Reconstruct the exact state of files at any point in the timeline |
+| `diff_frames` | Unified diff between any two points in the timeline |
+| `search_edits` | Find frames where a specific function/pattern was modified (regex) |
+| `get_regression_window` | Get candidate frames for bisecting a regression (filter by file and range) |
+| `subscribe_edits` | Subscribe to live edit notifications from an active recording session |
 
-Copy `skills/vibetracer-review.md` to your Claude skills directory to enable the self-correction workflow. When tests fail after a series of edits, the skill guides the AI through loading the trace, bisecting the regression, and fixing it surgically.
+All list-returning tools support `offset`/`limit` pagination and stream JSONL lazily -- they handle arbitrarily large traces without loading everything into memory.
+
+**Self-correction skill:** Copy `skills/vibetracer-review.md` to your AI assistant's skills directory. It orchestrates the full workflow: load the trace, identify scope, run tests, bisect the regression through the timeline, and fix surgically at the source rather than patching on top.
 
 ### Session Management
 
@@ -290,7 +298,7 @@ Data is stored in `.vibetracer/` within your project directory. Add it to `.giti
 
 ## Tech Stack
 
-Rust, ratatui, crossterm, notify, similar, serde, clap, sha2, libc
+Rust, ratatui, crossterm, notify, similar, serde, serde_json, clap, sha2, regex, glob, chrono, libc
 
 ## Contributing
 
