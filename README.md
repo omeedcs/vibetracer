@@ -110,6 +110,35 @@ vibetracer export --format git-notes <session-id>        # git-ai compatible git
 
 Agent Trace JSON is the vendor-neutral format used by Cursor and the git-ai ecosystem. Git notes attach authorship logs directly to commits, compatible with `git-ai blame`.
 
+### MCP Server (AI Self-Correction)
+
+vibetracer includes an MCP (Model Context Protocol) server that exposes trace data to AI coding assistants, enabling them to scrub through edit history and fix their own mistakes.
+
+Add to your `.claude.json` or MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "vibetracer": {
+      "command": "vibetracer",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+| Tool | Description |
+|------|-------------|
+| `list_sessions` | List recorded trace sessions |
+| `get_timeline` | Get the edit timeline for a session |
+| `get_frame` | Get file state at any point in the timeline |
+| `diff_frames` | Diff between any two points |
+| `search_edits` | Find frames where a pattern was modified |
+| `get_regression_window` | Get candidate frames for bisecting a regression |
+| `subscribe_edits` | Subscribe to live edit notifications |
+
+Copy `skills/vibetracer-review.md` to your Claude skills directory to enable the self-correction workflow. When tests fail after a series of edits, the skill guides the AI through loading the trace, bisecting the regression, and fixing it surgically.
+
 ### Session Management
 
 ```bash
@@ -167,6 +196,9 @@ vibetracer export --format agent-trace <session-id>
 
 # Export session as git-ai git notes
 vibetracer export --format git-notes <session-id>
+
+# Start MCP server for AI coding assistants
+vibetracer mcp
 
 # Initialize config with smart auto-detection
 vibetracer init
@@ -251,6 +283,7 @@ vibetracer
   hook/              Claude Code hook registration
   import/            Multi-agent session import (Claude Code, Cursor, Codex CLI)
   export/            Session export (Agent Trace JSON, git-ai git notes)
+  mcp/               MCP server (JSON-RPC stdio, exposes trace data to AI assistants)
 ```
 
 Data is stored in `.vibetracer/` within your project directory. Add it to `.gitignore`.
