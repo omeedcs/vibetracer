@@ -67,6 +67,8 @@ enum Commands {
         #[arg(long)]
         output: Option<String>,
     },
+    /// Start MCP server (stdio JSON-RPC for AI coding assistants)
+    Mcp,
     /// Manage the background recorder daemon
     Daemon {
         #[command(subcommand)]
@@ -455,6 +457,12 @@ fn main() -> anyhow::Result<()> {
                     )?;
                 }
             }
+        }
+
+        // ── MCP: start stdio JSON-RPC server ─────────────────────────────────
+        Some(Commands::Mcp) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+            vibetracer::mcp::run_mcp_server(project_path)?;
         }
 
         // ── Default: run live TUI ──────────────────────────────────────────────

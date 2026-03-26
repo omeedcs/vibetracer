@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, bail};
+use serde_json::{Value, json};
 
 use crate::event::EditEvent;
 use crate::session::SessionManager;
@@ -10,7 +10,7 @@ use crate::snapshot::edit_log::EditLog;
 use crate::snapshot::store::SnapshotStore;
 use crate::watcher::differ::compute_diff;
 
-use super::pagination::{read_edits_paged, PageParams};
+use super::pagination::{PageParams, read_edits_paged};
 
 /// Context for MCP tool handler dispatch. Holds the path to the sessions
 /// directory and provides helper methods for locating session artifacts.
@@ -53,10 +53,7 @@ impl HandlerContext {
     /// Extract pagination parameters from a JSON arguments object. Missing or
     /// non-integer values fall back to defaults.
     pub fn page_params(args: &Value) -> PageParams {
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let limit = args
             .get("limit")
             .and_then(|v| v.as_u64())
@@ -379,9 +376,10 @@ impl HandlerContext {
         let mut map = HashMap::new();
         if let Some(files) = frame_result.get("files").and_then(|v| v.as_array()) {
             for f in files {
-                if let (Some(p), Some(c)) =
-                    (f.get("path").and_then(|v| v.as_str()), f.get("content").and_then(|v| v.as_str()))
-                {
+                if let (Some(p), Some(c)) = (
+                    f.get("path").and_then(|v| v.as_str()),
+                    f.get("content").and_then(|v| v.as_str()),
+                ) {
                     map.insert(p, c);
                 }
             }
@@ -463,10 +461,7 @@ mod tests {
         assert_eq!(result["total_count"], 2);
 
         // Both session IDs should be present.
-        let ids: Vec<&str> = sessions
-            .iter()
-            .map(|s| s["id"].as_str().unwrap())
-            .collect();
+        let ids: Vec<&str> = sessions.iter().map(|s| s["id"].as_str().unwrap()).collect();
         assert!(ids.contains(&"session-a"));
         assert!(ids.contains(&"session-b"));
 

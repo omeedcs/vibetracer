@@ -2,6 +2,7 @@ pub mod blast_radius_test;
 pub mod config_test;
 pub mod hook_test;
 pub mod import_test;
+pub mod mcp_test;
 pub mod sentinel_test;
 pub mod session_test;
 pub mod snapshot_test;

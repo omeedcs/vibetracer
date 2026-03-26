@@ -30,7 +30,9 @@ pub fn all_tool_definitions() -> Vec<McpToolDef> {
         // 2. get_timeline
         McpToolDef {
             name: "get_timeline".to_string(),
-            description: "Get the edit timeline for a session, returning frames in chronological order.".to_string(),
+            description:
+                "Get the edit timeline for a session, returning frames in chronological order."
+                    .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -57,7 +59,8 @@ pub fn all_tool_definitions() -> Vec<McpToolDef> {
         // 3. get_frame
         McpToolDef {
             name: "get_frame".to_string(),
-            description: "Get a single frame (snapshot) from a session, including its diff.".to_string(),
+            description: "Get a single frame (snapshot) from a session, including its diff."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -134,7 +137,8 @@ pub fn all_tool_definitions() -> Vec<McpToolDef> {
         // 6. get_regression_window
         McpToolDef {
             name: "get_regression_window".to_string(),
-            description: "Identify the frame range where a regression was likely introduced.".to_string(),
+            description: "Identify the frame range where a regression was likely introduced."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
