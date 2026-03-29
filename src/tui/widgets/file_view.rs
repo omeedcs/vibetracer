@@ -10,9 +10,12 @@ use std::collections::HashSet;
 use crate::event::EditKind;
 use crate::theme::Theme;
 use crate::tui::App;
+use crate::tui::blame;
 use crate::tui::syntax::{HighlightedLine, Highlighter};
 
 const GUTTER_WIDTH: u16 = 6;
+const BLAME_WIDTH: u16 = 18;
+const ANNOTATION_WIDTH: u16 = 22;
 
 /// A widget that renders syntax-highlighted file content at the current playhead
 /// position, with line numbers, change markers, and scroll support.
@@ -110,8 +113,23 @@ impl Widget for FileView<'_> {
             buf,
         );
 
+        // -- Compute blame data if needed --
+        let blame_data = if self.app.blame_visible {
+            let filename = self.filename;
+            Some(blame::compute_blame(&self.app.edits, filename, self.app.playhead))
+        } else {
+            None
+        };
+
         // -- Body: syntax-highlighted lines with gutter --
-        let content_width = area.width.saturating_sub(GUTTER_WIDTH + 1); // +1 for separator space
+        let right_col_width = if self.app.blame_visible {
+            BLAME_WIDTH + 1 // +1 for separator
+        } else if self.app.annotations_visible {
+            ANNOTATION_WIDTH + 1
+        } else {
+            0
+        };
+        let content_width = area.width.saturating_sub(GUTTER_WIDTH + 1 + right_col_width);
 
         for row_idx in 0..body_height {
             let line_idx = scroll + row_idx; // 0-based index into the file
@@ -195,11 +213,46 @@ impl Widget for FileView<'_> {
                 Rect {
                     x: area.x,
                     y,
-                    width: area.width,
+                    width: area.width.saturating_sub(right_col_width),
                     height: 1,
                 },
                 buf,
             );
+
+            // -- Blame/annotation right column --
+            if right_col_width > 0 {
+                let col_x = area.x + area.width.saturating_sub(right_col_width);
+                let col_width = right_col_width.saturating_sub(1);
+
+                buf.set_string(col_x, y, "\u{2502}", Style::default().fg(theme.separator));
+
+                if self.app.blame_visible {
+                    if let Some(ref blame_map) = blame_data {
+                        if let Some(b) = blame_map.get(&line_num) {
+                            let text = blame::format_blame(b, col_width as usize);
+                            let agent_idx = b.agent_label.as_ref()
+                                .map(|label| {
+                                    let mut hash: usize = 0;
+                                    for byte in label.bytes() {
+                                        hash = hash.wrapping_mul(31).wrapping_add(byte as usize);
+                                    }
+                                    hash % theme.agent_colors.len()
+                                })
+                                .unwrap_or(0);
+                            buf.set_string(col_x + 1, y, &text, Style::default().fg(theme.agent_colors[agent_idx]));
+                        } else {
+                            buf.set_string(col_x + 1, y, "original", Style::default().fg(theme.fg_dim));
+                        }
+                    }
+                } else if self.app.annotations_visible && is_changed {
+                    if let Some(edit) = self.app.current_edit() {
+                        if let Some(ref intent) = edit.operation_intent {
+                            let truncated: String = intent.chars().take(col_width as usize).collect();
+                            buf.set_string(col_x + 1, y, &truncated, Style::default().fg(theme.accent_warm));
+                        }
+                    }
+                }
+            }
         }
 
         // -- Scrollbar (right edge) --

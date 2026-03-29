@@ -108,6 +108,33 @@ pub fn run_event_loop(
         // ── update dashboard state ────────────────────────────────────────────
         app.update_dashboard();
 
+        // ── evaluate alert conditions ────────────────────────────────────────
+        {
+            use crate::tui::alerts::{AlertAction, AlertState};
+
+            let alert_state = AlertState {
+                session_cost: app.dashboard_state.total_cost,
+                sentinel_failures: app.dashboard_state.sentinel_fail,
+                stale_count: app.dashboard_state.stale_count,
+                edit_velocity: app.dashboard_state.edit_velocity,
+                edit_count: app.edits.len() as u64,
+            };
+            let fired = app.alert_evaluator.evaluate(&alert_state);
+            for alert in fired {
+                match alert.action {
+                    AlertAction::Toast => {
+                        app.show_toast(alert.message, crate::tui::app::ToastStyle::Warning);
+                    }
+                    AlertAction::Flash => {
+                        app.screen_flash = Some(std::time::Instant::now());
+                    }
+                    AlertAction::Bell => {
+                        print!("\x07");
+                    }
+                }
+            }
+        }
+
         // ── render ────────────────────────────────────────────────────────────
         let file_content_data: Option<(String, String)> = app.current_file_content(session_dir);
         let changed_lines = app.changed_lines_from_patch();
@@ -299,6 +326,16 @@ pub fn run_event_loop(
             let kb_line = Line::from(kb_spans);
             kb_line.render(lo.keybindings, buf);
 
+            // Session diff overlay (on top of main content, below help/palette).
+            if let Some(ref diff) = app.session_diff {
+                widgets::session_diff_view::SessionDiffView::new(
+                    diff,
+                    &app.theme,
+                    app.session_diff_selected,
+                )
+                .render(area, buf);
+            }
+
             // Help overlay (on top of everything).
             if show_help {
                 widgets::help_overlay::HelpOverlay::new(&app.theme).render(area, buf);
@@ -315,7 +352,50 @@ pub fn run_event_loop(
                     theme_separator: app.theme.separator,
                 }.render(area, buf);
             }
+
+            // Bookmark list popup overlay (on top of everything).
+            if app.bookmark_popup_visible {
+                let sorted = app.bookmark_manager.sorted();
+                let sorted_owned: Vec<crate::tui::bookmarks::Bookmark> =
+                    sorted.into_iter().cloned().collect();
+                widgets::bookmark_list::BookmarkListWidget::new(
+                    &sorted_owned,
+                    app.bookmark_popup_selected,
+                    &app.theme,
+                )
+                .render(area, buf);
+            }
+
+            // Screen flash overlay (brief red-tinted overlay that fades after 200ms).
+            if let Some(flash_time) = app.screen_flash {
+                let elapsed_ms = flash_time.elapsed().as_millis();
+                if elapsed_ms < 200 {
+                    // Fade from ~40% opacity to 0 over 200ms.
+                    let alpha = 1.0 - (elapsed_ms as f64 / 200.0);
+                    let tint_r = (40.0 * alpha) as u8;
+                    for y in area.y..area.y + area.height {
+                        for x in area.x..area.x + area.width {
+                            if let Some(cell) = buf.cell_mut((x, y)) {
+                                let bg_color = cell.bg;
+                                let (br, bg_g, bb) = match bg_color {
+                                    Color::Rgb(r, g, b) => (r, g, b),
+                                    _ => (0, 0, 0),
+                                };
+                                let new_r = br.saturating_add(tint_r);
+                                cell.set_bg(Color::Rgb(new_r, bg_g, bb));
+                            }
+                        }
+                    }
+                }
+            }
         })?;
+
+        // Clear screen flash after 200ms.
+        if let Some(flash_time) = app.screen_flash {
+            if flash_time.elapsed().as_millis() >= 200 {
+                app.screen_flash = None;
+            }
+        }
 
         // ── poll for crossterm events (adaptive timeout) ──────────────────────
         let poll_duration = match &app.playback {
@@ -337,7 +417,13 @@ pub fn run_event_loop(
                             match key.code {
                                 KeyCode::Esc => { app.command_palette.close(); }
                                 KeyCode::Enter => {
-                                    if let Some(action_id) = app.command_palette.confirm() {
+                                    // Check if the raw input is a :diff command before
+                                    // confirming via the filtered entry list.
+                                    let raw = app.command_palette.input.clone();
+                                    if raw.starts_with("diff ") {
+                                        app.command_palette.close();
+                                        parse_and_open_diff(app, &raw);
+                                    } else if let Some(action_id) = app.command_palette.confirm() {
                                         // Dispatch palette action by ID
                                         dispatch_palette_action(app, &action_id);
                                     }
@@ -346,6 +432,105 @@ pub fn run_event_loop(
                                 KeyCode::Down => { app.command_palette.select_down(); }
                                 KeyCode::Backspace => { app.command_palette.pop_char(); }
                                 KeyCode::Char(c) => { app.command_palette.push_char(c); }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        // ── Session diff overlay key routing ───────────────
+                        if app.session_diff.is_some() {
+                            use crossterm::event::KeyCode;
+                            match key.code {
+                                KeyCode::Esc => {
+                                    app.session_diff = None;
+                                    app.session_diff_selected = 0;
+                                }
+                                KeyCode::Up => {
+                                    if app.session_diff_selected > 0 {
+                                        app.session_diff_selected -= 1;
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    if let Some(ref diff) = app.session_diff {
+                                        if !diff.file_changes.is_empty()
+                                            && app.session_diff_selected + 1
+                                                < diff.file_changes.len()
+                                        {
+                                            app.session_diff_selected += 1;
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        // ── Bookmark popup key routing ──────────────────────
+                        if app.bookmark_popup_visible {
+                            use crossterm::event::KeyCode;
+                            match key.code {
+                                KeyCode::Esc => {
+                                    app.bookmark_popup_visible = false;
+                                }
+                                KeyCode::Up => {
+                                    if app.bookmark_popup_selected > 0 {
+                                        app.bookmark_popup_selected -= 1;
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    let sorted = app.bookmark_manager.sorted();
+                                    if !sorted.is_empty()
+                                        && app.bookmark_popup_selected + 1 < sorted.len()
+                                    {
+                                        app.bookmark_popup_selected += 1;
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    let sorted = app.bookmark_manager.sorted();
+                                    if let Some(bm) = sorted.get(app.bookmark_popup_selected) {
+                                        let target = bm.edit_index;
+                                        if target < app.edits.len() {
+                                            app.playhead = target;
+                                            app.playback = crate::tui::PlaybackState::Paused;
+                                            app.cached_content = None;
+                                            app.show_toast(
+                                                format!("jumped to #{}", target),
+                                                crate::tui::app::ToastStyle::Info,
+                                            );
+                                        }
+                                    }
+                                    app.bookmark_popup_visible = false;
+                                }
+                                KeyCode::Char('d') => {
+                                    // Delete the selected bookmark. The popup shows
+                                    // sorted (descending) bookmarks, so we need to
+                                    // find the original index in the manager.
+                                    let sorted = app.bookmark_manager.sorted();
+                                    if let Some(bm) = sorted.get(app.bookmark_popup_selected) {
+                                        // Find the matching bookmark in the original vec
+                                        // by edit_index and timestamp.
+                                        let target_idx = bm.edit_index;
+                                        let target_ts = bm.timestamp;
+                                        if let Some(pos) = app
+                                            .bookmark_manager
+                                            .bookmarks
+                                            .iter()
+                                            .position(|b| {
+                                                b.edit_index == target_idx
+                                                    && b.timestamp == target_ts
+                                            })
+                                        {
+                                            app.bookmark_manager.remove(pos);
+                                        }
+                                    }
+                                    // Clamp selection.
+                                    let new_len = app.bookmark_manager.bookmarks.len();
+                                    if new_len == 0 {
+                                        app.bookmark_popup_selected = 0;
+                                    } else if app.bookmark_popup_selected >= new_len {
+                                        app.bookmark_popup_selected = new_len - 1;
+                                    }
+                                }
                                 _ => {}
                             }
                             continue;
@@ -675,6 +860,7 @@ pub fn register_palette_entries(palette: &mut widgets::command_palette::CommandP
         // Analysis
         ("toggle_blast", "Toggle Blast Radius", Some("b"), "Analysis"),
         ("toggle_watchdog", "Toggle Watchdog", Some("w"), "Analysis"),
+        ("session_diff", "Session Diff...", None, "Analysis"),
         // Tracks
         ("solo_track", "Solo Track", Some("s"), "Track"),
         ("mute_track", "Mute Track", Some("m"), "Track"),
@@ -735,8 +921,18 @@ fn dispatch_palette_action(app: &mut App, action_id: &str) {
         "restore" => {} // Handled externally in event loop
         "undo_restore" => {} // Handled externally in event loop
         "checkpoint" => {} // Handled externally in event loop
-        "bookmark" => input::apply_action(app, input::Action::CreateBookmark),
-        "jump_bookmark" => input::apply_action(app, input::Action::JumpToBookmark),
+        "session_diff" => {
+            app.show_toast(
+                "use :diff <from> <to>".to_string(),
+                crate::tui::app::ToastStyle::Info,
+            );
+        }
+        "bookmark" => {
+            input::apply_action(app, input::Action::CreateBookmark);
+        }
+        "jump_bookmark" => {
+            input::apply_action(app, input::Action::JumpToBookmark);
+        }
         "theme_next" => input::apply_action(app, input::Action::CycleTheme),
         "quit" => app.should_quit = true,
         "quit_daemon" => app.should_quit = true,
@@ -757,4 +953,31 @@ fn dispatch_palette_action(app: &mut App, action_id: &str) {
         }
         _ => {}
     }
+}
+
+/// Parse a raw `:diff <from> <to>` command and open the session diff overlay.
+fn parse_and_open_diff(app: &mut App, raw: &str) {
+    use crate::tui::session_diff::SessionDiff;
+
+    // Expected format: "diff 20 80" or "diff 20 80" (leading "diff " stripped).
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.len() >= 3 {
+        if let (Ok(from), Ok(to)) = (parts[1].parse::<usize>(), parts[2].parse::<usize>()) {
+            if app.edits.is_empty() {
+                app.show_toast(
+                    "no edits to diff".to_string(),
+                    crate::tui::app::ToastStyle::Warning,
+                );
+                return;
+            }
+            let diff = SessionDiff::compute(&app.edits, from, to);
+            app.session_diff_selected = 0;
+            app.session_diff = Some(diff);
+            return;
+        }
+    }
+    app.show_toast(
+        "usage: diff <from> <to>".to_string(),
+        crate::tui::app::ToastStyle::Warning,
+    );
 }

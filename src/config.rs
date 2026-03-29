@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::tui::alerts::AlertConfig;
+
 /// Filesystem watch configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -116,6 +118,8 @@ pub struct Config {
     pub watchdog: WatchdogConfig,
     pub blast_radius: BlastRadiusConfig,
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub alerts: Vec<AlertConfig>,
 }
 
 impl Config {

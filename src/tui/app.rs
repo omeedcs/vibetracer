@@ -10,7 +10,10 @@ use crate::snapshot::store::SnapshotStore;
 use crate::theme::Theme;
 use crate::tui::layout::AppLayout;
 use crate::claude_log::{ConversationTurn, TokenStats};
+use crate::tui::alerts::AlertEvaluator;
+use crate::tui::bookmarks::BookmarkManager;
 use crate::tui::filter::Filter;
+use crate::tui::session_diff::SessionDiff;
 use crate::tui::widgets::command_palette::CommandPalette;
 use crate::tui::widgets::conversation::ConversationState;
 use crate::tui::widgets::dashboard::DashboardState;
@@ -185,6 +188,32 @@ pub struct App {
     pub track_flash: Option<(String, std::time::Instant)>,
     /// Flash timer for playback state change.
     pub playback_flash: Option<std::time::Instant>,
+
+    // ── blame & annotations ─────────────────────────────────────────────────
+    /// Whether blame view is active (per-line attribution).
+    pub blame_visible: bool,
+    /// Whether inline annotations are active.
+    pub annotations_visible: bool,
+
+    // ── bookmarks ────────────────────────────────────────────────────────────
+    /// Bookmark manager for timeline positions.
+    pub bookmark_manager: BookmarkManager,
+    /// Whether the bookmark list popup is visible.
+    pub bookmark_popup_visible: bool,
+    /// Currently selected index in the bookmark list popup.
+    pub bookmark_popup_selected: usize,
+
+    // ── configurable alerts ─────────────────────────────────────────────────
+    /// Evaluator for configurable notification triggers.
+    pub alert_evaluator: AlertEvaluator,
+    /// Instant when a Flash alert action fired (renders a brief tinted overlay).
+    pub screen_flash: Option<std::time::Instant>,
+
+    // ── session diff ────────────────────────────────────────────────────────
+    /// Currently visible session diff (None when overlay is hidden).
+    pub session_diff: Option<SessionDiff>,
+    /// Selected file index within the session diff overlay.
+    pub session_diff_selected: usize,
 }
 
 impl App {
@@ -249,6 +278,19 @@ impl App {
             last_layout: None,
             track_flash: None,
             playback_flash: None,
+
+            blame_visible: false,
+            annotations_visible: false,
+
+            bookmark_manager: BookmarkManager::new(),
+            bookmark_popup_visible: false,
+            bookmark_popup_selected: 0,
+
+            alert_evaluator: AlertEvaluator::empty(),
+            screen_flash: None,
+
+            session_diff: None,
+            session_diff_selected: 0,
         }
     }
 

@@ -1,10 +1,14 @@
+pub mod alerts;
 pub mod app;
+pub mod blame;
+pub mod bookmarks;
 pub mod event_loop;
 pub mod filter;
 pub mod input;
 pub mod layout;
 pub mod operation;
 pub mod playhead;
+pub mod session_diff;
 pub mod syntax;
 pub mod tailer;
 pub mod widgets;
@@ -163,6 +167,11 @@ pub fn run_tui_with_options(
     app.connected = true;
     app.theme = Theme::from_preset(&config.theme.preset);
     app.theme_name = config.theme.preset.clone();
+
+    // Initialize alert evaluator from config.
+    if !config.alerts.is_empty() {
+        app.alert_evaluator = alerts::AlertEvaluator::new(config.alerts.clone());
+    }
 
     // Register command palette entries.
     event_loop::register_palette_entries(&mut app.command_palette);

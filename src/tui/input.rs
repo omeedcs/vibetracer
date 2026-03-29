@@ -541,16 +541,39 @@ pub fn apply_action(app: &mut App, action: Action) {
             }
         }
 
-        // Blame / annotations / bookmarks / maximize — placeholders for later waves
-        Action::ToggleBlame
-        | Action::ToggleAnnotations
-        | Action::CreateBookmark
-        | Action::JumpToBookmark
-        | Action::MaximizePanel => {
+        // Bookmarks
+        Action::CreateBookmark => {
+            let edit_index = app.playhead;
+            let label = format!("edit #{}", edit_index);
+            app.bookmark_manager.add(label.clone(), edit_index);
             app.show_toast(
-                "coming soon".to_string(),
-                crate::tui::app::ToastStyle::Info,
+                format!("bookmark: {}", label),
+                crate::tui::app::ToastStyle::Success,
             );
+        }
+        Action::JumpToBookmark => {
+            app.bookmark_popup_visible = true;
+            app.bookmark_popup_selected = 0;
+        }
+
+        Action::ToggleBlame => {
+            app.blame_visible = !app.blame_visible;
+            if app.blame_visible {
+                app.annotations_visible = false; // mutually exclusive
+            }
+            let msg = if app.blame_visible { "blame: on" } else { "blame: off" };
+            app.show_toast(msg.to_string(), crate::tui::app::ToastStyle::Info);
+        }
+        Action::ToggleAnnotations => {
+            app.annotations_visible = !app.annotations_visible;
+            if app.annotations_visible {
+                app.blame_visible = false; // mutually exclusive
+            }
+            let msg = if app.annotations_visible { "annotations: on" } else { "annotations: off" };
+            app.show_toast(msg.to_string(), crate::tui::app::ToastStyle::Info);
+        }
+        Action::MaximizePanel => {
+            app.show_toast("coming soon".to_string(), crate::tui::app::ToastStyle::Info);
         }
 
         // These actions require external handling; nothing to do in the state machine.

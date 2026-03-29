@@ -39,6 +39,10 @@ const KEYBINDINGS: &[(&str, &str)] = &[
     ("i", "toggle sentinels"),
     ("w", "toggle watchdog"),
     ("tab", "cycle focus"),
+    // ── bookmarks ──
+    ("", "-- bookmarks --"),
+    ("M", "create bookmark"),
+    ("'", "jump to bookmark"),
     // ── meta ──
     ("", "-- meta --"),
     ("q", "quit"),
