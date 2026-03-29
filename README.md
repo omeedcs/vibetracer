@@ -1,124 +1,190 @@
 # vibetracer
 
-Real-time tracing, replaying, and restoring of AI coding assistant edits. A background daemon records every change. A TUI lets you scrub through time, inspect diffs, and surgically restore files to any prior state. An MCP server exposes trace data back to AI assistants for self-correction. Cross-agent support for Claude Code, Cursor, and Codex CLI. Export sessions as Agent Trace JSON or git-ai compatible git notes.
+Real-time AI coding session observability. Trace, replay, and understand what your AI assistant is actually doing.
 
 ```
-        _ _          _
- __   _(_) |__   ___| |_ _ __ __ _  ___ ___ _ __
- \ \ / / | '_ \ / _ \ __| '__/ _` |/ __/ _ \ '__|
-  \ V /| | |_) |  __/ |_| | | (_| | (_|  __/ |
-   \_/ |_|_.__/ \___|\__|_|  \__,_|\___\___|_|
+cargo install vibetracer
 ```
 
-## The Problem
+---
 
-AI coding assistants edit fast. By the time something breaks, the relevant change is buried under dozens of others. You can't surgically undo a single AI command. You can't see which agent touched which file. You can't rewind one file without rewinding everything else.
+## What is vibetracer?
 
-vibetracer fixes this.
+vibetracer is a terminal-based observability cockpit for AI coding sessions. It captures every file change, parses Claude Code's conversation logs, and presents everything in a dense htop-style TUI. You can scrub through time, inspect individual edits, see what Claude was thinking, track token costs, and surgically restore files. It works with Claude Code, Cursor, and Codex CLI out of the box.
 
-## How It Works
+## Quick Start
 
-vibetracer runs a lightweight **background daemon** that watches your project directory. Every file change is captured as a diff, stored in a content-addressed snapshot store, and logged to an append-only JSONL edit journal. The daemon is invisible -- it records silently and costs near-zero overhead.
-
-When you want to inspect, open the **TUI viewer**. It reads the edit log from disk and renders a multi-track timeline inspired by non-linear video editors. Each file is a track. Each edit is a clip. Scrub through time, inspect diffs, and restore files when you need to.
-
-When Claude Code is detected, vibetracer registers a hook to capture **which agent** made each edit, **what command** triggered it, and **why**. Multiple Claude Code sessions are tracked independently with per-agent attribution.
-
+```bash
+cargo install vibetracer
+cd your-project
+vibetracer          # starts watching + opens cockpit
+vibetracer demo     # try the interactive demo
 ```
-vibetracer                         # start TUI (auto-starts daemon)
-vibetracer daemon start            # start daemon without TUI
-vibetracer daemon status           # check daemon state
-```
+
+vibetracer auto-starts a background daemon, begins recording, and opens the TUI. Close the TUI and the daemon keeps recording. Reconnect later with `vibetracer` and pick up where you left off.
+
+---
 
 ## Features
 
-### Daemon + Viewer Architecture
+### Cockpit Dashboard
 
-The daemon records in the background. The TUI connects as a read-only viewer. Close the TUI -- the daemon keeps recording. Reconnect later and pick up where you left off.
+A dense htop-style dashboard showing everything at a glance. Toggle with `D`.
 
-```bash
-vibetracer daemon start ~/my-project   # start recording
-# ... work for hours ...
-vibetracer ~/my-project                # open TUI, see everything
+- Token and cost tracking with burn rate computed from Claude Code logs
+- Edit velocity graph (edits per minute over the last 60 seconds)
+- File heatmap showing the most-edited files ranked by edit count
+- Agent status indicators (active/idle based on 10-second activity window)
+- Operation progress tracking with per-operation edit counts
+- Blast radius summary: stale, updated, and untouched dependent files
+- Sentinel failure count with rule names and descriptions
+- Watchdog status with per-constant alert details
+- Cache hit rate percentage from Claude's token usage
+
+### Vim-Modal Interface
+
+Four modes, each with dedicated keybindings and a context-sensitive status bar:
+
+- **Normal** -- default mode for navigation, scrubbing, and panel toggles
+- **Timeline** (`t`) -- focused timeline manipulation with zoom, pan, and track selection
+- **Inspect** (`i`) -- deep-dive into individual edits with diff/file/conversation views
+- **Search** (`/`) -- composable filter syntax to narrow edits across the entire session
+
+The mode indicator displays in the status bar. A command palette (`:` or `Ctrl+P`) provides fuzzy search across all actions with MRU ordering.
+
+### Claude Code Integration
+
+When Claude Code's `.claude/` directory is detected, vibetracer auto-registers a `PostToolUse` hook and begins parsing conversation logs in a background thread.
+
+- User prompts and tool call trees parsed in real-time
+- Token usage per turn with cost estimates (input, output, cache read)
+- Cache hit rate tracking
+- Conversation panel (`C` key) with navigable turns and tool calls
+- Agent label and operation intent attached to every edit
+
+### Timeline and Playback
+
+```
++-- timeline -------------------------------------------------------+
+| src/auth.rs      [====|==  |=====|=  ] ------>                     |
+| src/config.py    [==  |    |=    |   ] ------>                     |
+| src/model.py     [    |====|     |===] ------>                     |
+|                        ^                                           |
+|                     playhead                                       |
++--------------------------------------------------------------------+
 ```
 
-### Per-File Playheads
+- Per-file horizontal tracks with edit cells color-coded by agent
+- Global playhead plus independent per-file playheads
+- Detachable file playheads (scrub one file while others stay at global position)
+- Solo and mute tracks to focus on specific files
+- Timeline zoom (`+`/`-`) and pan (arrow keys in Timeline mode)
+- Command view (`g`) groups edits by the AI operation that caused them
+- Multi-agent color coding with per-agent solo filtering (`1`-`9`)
+- Auto-follow (Live mode) with manual pause/play (`Space`)
 
-Each file gets its own independent playhead. Rewind `model.py` to 3 edits ago while keeping `config.py` at its latest state. Detach a file from the global timeline, scrub it independently, then reattach when done.
+### Investigation Tools
 
-### Command-Level Operation Grouping
+**Search and Filter** -- composable syntax with AND logic across predicates:
 
-Toggle between **edit view** (every individual file change) and **command view** (edits grouped by the AI command that caused them). See "Claude refactored auth middleware (touched 4 files)" as a single timeline entry. Restore an entire command atomically.
+```
+file:auth agent:claude kind:modify tool:Edit after:14:30 before:15:00 lines>20 op:refactor content:token
+```
 
-### Multi-Agent Tracking
+| Predicate | Description |
+|-----------|-------------|
+| `file:` | Match file path substring |
+| `agent:` | Match agent ID or label |
+| `kind:` | Filter by create, modify, or delete |
+| `tool:` | Match tool name (Edit, Write, etc.) |
+| `after:` | Edits after HH:MM offset or edit ID |
+| `before:` | Edits before HH:MM offset or edit ID |
+| `lines>` / `lines<` | Filter by total lines changed |
+| `op:` | Match operation intent substring |
+| `content:` | Grep through diff content |
+| bare text | Fuzzy match across all fields |
 
-Multiple AI agents editing the same project are tracked independently. Claude Code, Cursor, and Codex CLI are all supported. Each agent gets a distinct color on the timeline. When two agents edit the same file within 5 seconds, the timeline shows conflict indicators. Filter by agent. Restore everything one agent did in a time range.
+**Blame View** (`B`) -- per-line agent and operation attribution overlaid on the file preview. Shows which agent wrote each line and what operation triggered it.
+
+**Inline Annotations** (`A`) -- operation intent displayed alongside code. Mutually exclusive with blame view.
+
+**Session Diff** (`:diff from to`) -- compare two points in the session timeline. Shows per-file change summaries with lines added/removed, edit counts, and which agents touched each file.
+
+**Bookmarks** (`M` to create, `'` to jump) -- mark interesting positions in the timeline for quick navigation. Bookmark list displayed as a popup overlay.
 
 ### Restore System
 
-"Rewind" scrubs the timeline visually. "Restore" writes files to disk. These are separate actions -- vibetracer is an observer by default.
+Scrubbing is visual. Restoring writes to disk. These are separate actions.
 
-- **Restore file**: Single file to any prior edit point
-- **Undo restore**: Every restore is logged. Press `u` to reverse the last one.
-- **Conflict detection**: Blast radius checks suggest restoring coupled files together
-
-```bash
-# Headless restore from CLI (no TUI needed)
-vibetracer restore src/main.rs --edit-id 42
-```
+- **Restore file** (`R`) -- write the file at the current playhead position to disk
+- **Undo restore** (`u`) -- every restore is logged, reverse the last one
+- **Content-addressed snapshot store** -- every file version stored by SHA-256 hash
+- **Checkpoints** (`c`) -- manual full-project snapshots, plus auto-checkpoints every N edits (configurable)
+- **CLI restore** -- headless restore without opening the TUI: `vibetracer restore <file> --edit-id <N>`
 
 ### Analysis Engines
 
-**Blast Radius Detection** -- When a file is edited, see which dependent files need updating. Catches partial refactors where the AI updates 3 of 5 files and moves on.
+**Blast Radius** (`b`) -- when a file is edited, see which dependent files may need updating. Catches partial refactors where the AI updates 3 of 5 coupled files and moves on. Tracks stale, updated, and untouched dependents.
 
-**Invariant Sentinels** -- Define rules like "tensor input dimensions must match feature count." vibetracer alerts you instantly when an edit breaks an invariant.
+**Sentinels** -- cross-file invariant rules. Define assertions like "feature count in config must match model input size." vibetracer alerts instantly when an edit breaks the invariant.
 
-**Constants Watchdog** -- Register values that should never change (physics constants, API endpoints). Get an alert if the AI modifies them.
+**Watchdog** (`w`) -- register constants that should never change (physics values, API endpoints, config thresholds). Get alerted the moment the AI modifies a watched value. Severity levels: critical, warning, info.
 
-### 19 Color Themes
+**Configurable Alerts** -- trigger notifications based on session state:
 
-Cycle themes at runtime with `t`. No restart needed.
+| Condition | Example |
+|-----------|---------|
+| `session_cost > 1.00` | Cost exceeded threshold |
+| `sentinel_failures > 0` | Invariant broken |
+| `stale_count > 3` | Too many stale dependents |
+| `edit_velocity > 10` | Unusually high edit rate |
+| `edit_count > 100` | Large session |
 
-**Dark:** dark (default), catppuccin-mocha, catppuccin-macchiato, gruvbox-dark, tokyo-night, tokyo-night-storm, dracula, nord, kanagawa, rose-pine, one-dark, solarized-dark, everforest-dark
+Alert actions: `toast` (status bar), `flash` (screen flash), `bell` (terminal bell). Alerts auto-rearm when the condition becomes false.
 
-**Light:** light, catppuccin-latte, gruvbox-light, solarized-light, rose-pine-dawn, everforest-light
+### Multi-Agent Support
 
-```toml
-[theme]
-preset = "tokyo-night"
-```
+- Claude Code, Cursor, and Codex CLI all supported
+- Import sessions from any agent
+- Agent color coding on timeline tracks
+- Solo agent filtering (`1`-`9` in command view)
+- Per-agent edit attribution on every event
+- Conflict indicators when two agents edit the same file within 5 seconds
 
-### Cross-Agent Import
+### Export and Integration
 
-Import sessions from multiple AI coding assistants:
-
-- **Claude Code** -- JSONL session files with full tool metadata and intent context
-- **Cursor** -- Agent Trace JSON format (`.agent-trace/` directory)
-- **Codex CLI** -- Agent Trace compatible output
-
-When Claude Code's `.claude/` directory exists, vibetracer auto-registers a `PostToolUse` hook to capture tool metadata and intent context. Works in passive mode (filesystem-only) when no AI tool is detected.
-
-### Export to Ecosystem Formats
-
-Export your temporal recordings to formats the provenance ecosystem consumes:
+**Agent Trace JSON** -- vendor-neutral session export compatible with Cursor and the git-ai ecosystem:
 
 ```bash
-vibetracer export --format agent-trace <session-id>     # Agent Trace JSON
+vibetracer export --format agent-trace <session-id>
 vibetracer export --format agent-trace <session-id> --output trace.json
-vibetracer export --format git-notes <session-id>        # git-ai compatible git notes
 ```
 
-Agent Trace JSON is the vendor-neutral format used by Cursor and the git-ai ecosystem. Git notes attach authorship logs directly to commits, compatible with `git-ai blame`.
+**git-ai compatible git notes** -- attach authorship logs directly to commits:
 
-### MCP Server (AI Self-Correction)
+```bash
+vibetracer export --format git-notes <session-id>
+```
 
-vibetracer includes an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that exposes trace data back to AI coding assistants. This creates a feedback loop: the AI makes edits, vibetracer records them, and when something breaks, the AI can scrub through its own edit history to pinpoint which change introduced the regression -- like `git bisect` but at sub-commit granularity.
+**MCP Server** -- 7 tools exposed via Model Context Protocol for AI self-correction:
 
 ```bash
 vibetracer mcp   # start stdio JSON-RPC server
 ```
 
-Add to your MCP client configuration (e.g., `.claude.json`, Cursor settings, or any MCP-compatible tool):
+| MCP Tool | Description |
+|----------|-------------|
+| `list_sessions` | List recorded sessions with metadata and edit counts |
+| `get_timeline` | Get the edit timeline (paginated, filterable by file glob) |
+| `get_frame` | Reconstruct exact file state at any timeline point |
+| `diff_frames` | Unified diff between any two timeline points |
+| `search_edits` | Find frames where a pattern was modified (regex) |
+| `get_regression_window` | Candidate frames for bisecting a regression |
+| `subscribe_edits` | Subscribe to live edit notifications |
+
+All list-returning tools support `offset`/`limit` pagination and stream JSONL lazily.
+
+Add to your MCP client configuration:
 
 ```json
 {
@@ -131,140 +197,129 @@ Add to your MCP client configuration (e.g., `.claude.json`, Cursor settings, or 
 }
 ```
 
-**Available tools:**
+**Claude Code Hook** -- auto-registers a `PostToolUse` hook when `.claude/` is detected, capturing tool metadata and intent context on every edit.
 
-| Tool | Description |
-|------|-------------|
-| `list_sessions` | List recorded trace sessions with metadata and edit counts |
-| `get_timeline` | Get the edit timeline for a session (paginated, filterable by file glob) |
-| `get_frame` | Reconstruct the exact state of files at any point in the timeline |
-| `diff_frames` | Unified diff between any two points in the timeline |
-| `search_edits` | Find frames where a specific function/pattern was modified (regex) |
-| `get_regression_window` | Get candidate frames for bisecting a regression (filter by file and range) |
-| `subscribe_edits` | Subscribe to live edit notifications from an active recording session |
-
-All list-returning tools support `offset`/`limit` pagination and stream JSONL lazily -- they handle arbitrarily large traces without loading everything into memory.
-
-**Self-correction skill:** Copy `skills/vibetracer-review.md` to your AI assistant's skills directory. It orchestrates the full workflow: load the trace, identify scope, run tests, bisect the regression through the timeline, and fix surgically at the source rather than patching on top.
-
-### Session Management
-
-```bash
-vibetracer sessions                # list past sessions
-vibetracer replay <session-id>     # replay a past session in the TUI
-vibetracer import                  # list importable Claude Code sessions
-vibetracer import <session-id>     # import and replay a Claude Code session
-```
-
-## Install
-
-**Cargo:**
-```bash
-cargo install vibetracer
-```
-
-**From source:**
-```bash
-git clone https://github.com/omeedcs/vibetracer.git
-cd vibetracer
-cargo install --path .
-```
-
-## Usage
-
-```bash
-# Watch current directory (auto-starts daemon)
-vibetracer
-
-# Watch a specific project
-vibetracer ~/my-project
-
-# Single-process mode (no daemon, for debugging)
-vibetracer --no-daemon ~/my-project
-
-# Daemon management
-vibetracer daemon start [path]
-vibetracer daemon stop [path]
-vibetracer daemon status [path]
-
-# Restore a file from CLI (headless)
-vibetracer restore <file> --edit-id <N>
-
-# Import a Claude Code session
-vibetracer import [session-id]
-
-# Replay a past vibetracer session
-vibetracer replay <session-id>
-
-# List past sessions
-vibetracer sessions
-
-# Export session as Agent Trace JSON
-vibetracer export --format agent-trace <session-id>
-
-# Export session as git-ai git notes
-vibetracer export --format git-notes <session-id>
-
-# Start MCP server for AI coding assistants
-vibetracer mcp
-
-# Initialize config with smart auto-detection
-vibetracer init
-
-# Write debug log for troubleshooting
-vibetracer --debug ~/my-project
-```
+---
 
 ## Keybindings
 
+### Normal Mode
+
 | Key | Action |
 |-----|--------|
-| `Space` | play / pause |
-| `Left / Right` | scrub through edits (global) |
-| `Shift+Left / Right` | scrub per-file (detaches from global timeline) |
-| `a` | reattach detached file to global playhead |
-| `g` | toggle edit view / command view |
-| `R` | restore file at playhead to disk |
-| `u` | undo last restore |
-| `c` | create checkpoint |
-| `x` | toggle showing restore-generated edits |
-| `s` | solo a track |
-| `m` | mute a track |
-| `b` | blast radius panel |
-| `i` | sentinels panel |
-| `w` | watchdog panel |
-| `t` | cycle color theme |
-| `1-9` | solo agent (command view) |
-| `Tab` | cycle pane focus |
-| `?` | help overlay |
-| `q` | quit TUI (daemon keeps running) |
-| `Q` | quit TUI and stop daemon |
+| `q` | Quit TUI (daemon keeps running) |
+| `Q` | Quit TUI and stop daemon |
+| `?` | Help overlay |
+| `Space` | Play / pause |
+| `Left` / `Right` | Scrub through edits (global playhead) |
+| `Shift+Left` / `Shift+Right` | Scrub per-file (detaches from global timeline) |
+| `a` | Reattach detached file to global playhead |
+| `t` | Enter Timeline mode |
+| `i` | Enter Inspect mode |
+| `/` | Enter Search mode |
+| `:` or `Ctrl+P` | Open command palette |
+| `g` | Toggle edit view / command view |
+| `d` | Toggle preview mode (file / diff) |
+| `D` | Toggle dashboard panel |
+| `C` | Toggle conversation panel |
+| `B` | Toggle blame view |
+| `A` | Toggle inline annotations |
+| `M` | Create bookmark at current playhead |
+| `'` | Jump to bookmark (popup list) |
+| `R` | Restore file at playhead to disk |
+| `u` | Undo last restore |
+| `c` | Create checkpoint |
+| `x` | Toggle showing restore-generated edits |
+| `s` | Solo track (isolate current file) |
+| `m` | Mute track (hide current file) |
+| `b` | Toggle blast radius panel |
+| `w` | Toggle watchdog panel |
+| `z` | Maximize focused panel |
+| `j` / `k` | Scroll preview down / up |
+| `+` / `=` | Zoom timeline in |
+| `-` | Zoom timeline out |
+| `0` | Reset timeline zoom |
+| `Tab` | Cycle pane focus |
+| `1`-`9` | Solo agent N (command view) |
+
+### Timeline Mode (`t` to enter)
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Exit to Normal mode |
+| `Left` / `Right` | Pan timeline |
+| `Up` / `Down` | Select track |
+| `+` / `-` | Zoom in / out |
+| `=` | Reset zoom |
+| `s` | Solo selected track |
+| `m` | Mute selected track |
+| `Enter` | Jump playhead to selected track |
+| `q` | Quit |
+
+### Inspect Mode (`i` to enter)
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Exit to Normal mode |
+| `n` | Next edit |
+| `p` | Previous edit |
+| `d` | Toggle diff view |
+| `f` | Show full file |
+| `c` | Show conversation context |
+| `Enter` | Expand details |
+| `q` | Quit |
+
+### Search Mode (`/` to enter)
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Cancel and exit |
+| `Enter` | Lock filter and return to Normal mode |
+| `Backspace` | Delete character |
+| `Up` / `Down` | Scroll results |
+| Any character | Append to search query |
+
+### Command Palette (`:` or `Ctrl+P`)
+
+Fuzzy search across all available actions. Recently-used entries float to the top. Navigate with arrow keys, confirm with `Enter`, dismiss with `Esc`.
+
+---
 
 ## Configuration
 
-Run `vibetracer init` to auto-detect constants, schemas, and dependencies in your project.
+Run `vibetracer init` to auto-detect constants, schemas, and dependencies in your project. Configuration lives in `.vibetracer/config.toml`.
 
 ```toml
 # .vibetracer/config.toml
 
+[theme]
+preset = "tokyo-night"
+
 [watch]
 debounce_ms = 100
-ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer"]
 auto_checkpoint_every = 25
-
-[theme]
-preset = "dark"
+ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer"]
 
 # Watchdog: alert when registered constants change
+[[watchdog.constants]]
+pattern = "MAX_RETRIES"
+file = "src/config.rs"
+severity = "critical"
+
 [[watchdog.constants]]
 file = "**/*.py"
 pattern = 'EARTH_RADIUS_KM\s*=\s*([\d.]+)'
 expected = "6371.0"
 severity = "critical"
 
-# Sentinels: alert when invariants break
+# Sentinels: cross-file invariant rules
 [sentinels.feature_count]
-description = "feature count must match model input size"
+watch = "src/model.rs"
+assert_eq = "src/features.rs"
+description = "feature count must match model input"
+
+[sentinels.tensor_dims]
+description = "tensor input dimensions must match feature count"
 watch = "**/*.py"
 rule = "grep_match"
 pattern_a = { file = "config.py", regex = 'N_FEATURES\s*=\s*(\d+)' }
@@ -273,32 +328,120 @@ assert = "a == b"
 
 # Blast radius: declare file dependencies
 [[blast_radius.manual]]
+source = "src/auth.rs"
+dependents = ["src/session.rs", "src/api/login.rs"]
+
+[[blast_radius.manual]]
 source = "**/config*.py"
 dependents = ["**/model*.py", "**/serving*.py"]
+
+# Configurable alerts
+[[alerts]]
+name = "cost-warning"
+when = "session_cost > 1.00"
+action = "toast"
+message = "Session cost exceeded $1.00"
+
+[[alerts]]
+name = "sentinel-break"
+when = "sentinel_failures > 0"
+action = "flash"
+message = "Invariant broken"
+
+[[alerts]]
+name = "runaway-edits"
+when = "edit_velocity > 15"
+action = "bell"
+message = "Unusually high edit rate"
 ```
+
+---
+
+## CLI Reference
+
+```
+vibetracer [path]                          Watch directory (default: cwd)
+vibetracer demo                            Interactive feature demo
+vibetracer replay <session>                Replay a past session
+vibetracer sessions                        List past sessions
+vibetracer import [session]                Import Claude Code session
+vibetracer restore <file> --edit-id <N>    Restore a file to a specific edit
+vibetracer export --format agent-trace <session>   Export as Agent Trace JSON
+vibetracer export --format git-notes <session>     Export as git-ai git notes
+vibetracer mcp                             Start MCP server (stdio JSON-RPC)
+vibetracer daemon start|stop|status        Manage background daemon
+vibetracer init                            Create config with auto-detection
+vibetracer --no-daemon [path]              Single-process mode (no daemon)
+vibetracer --debug [path]                  Write debug log for troubleshooting
+```
+
+---
+
+## Themes
+
+19 built-in themes. Cycle at runtime with the command palette -- no restart needed.
+
+**Dark themes:** dark (default), catppuccin-mocha, catppuccin-macchiato, gruvbox-dark, tokyo-night, tokyo-night-storm, dracula, nord, kanagawa, rose-pine, one-dark, solarized-dark, everforest-dark
+
+**Light themes:** light, catppuccin-latte, gruvbox-light, solarized-light, rose-pine-dawn, everforest-light
+
+Set a default in config:
+
+```toml
+[theme]
+preset = "tokyo-night"
+```
+
+---
 
 ## Architecture
 
 ```
 vibetracer
-  daemon/           Background recorder (watcher + snapshot store + edit log)
-  recorder/          Shared recording logic (used by daemon and --no-daemon mode)
-  snapshot/          Content-addressed file storage + append-only JSONL edit log
-  checkpoint/        Full project state snapshots
-  restore/           File restoration engine + conflict checker
-  analysis/          Watchdog, sentinels, blast radius (run in TUI)
-  tui/               Terminal UI (app state, event loop, playheads, widgets)
-  hook/              Claude Code hook registration
-  import/            Multi-agent session import (Claude Code, Cursor, Codex CLI)
-  export/            Session export (Agent Trace JSON, git-ai git notes)
-  mcp/               MCP server (JSON-RPC stdio, exposes trace data to AI assistants)
+  daemon/           Background recorder (filesystem watcher + snapshot store + edit log)
+  recorder/         Shared recording logic (used by daemon and --no-daemon mode)
+  snapshot/         Content-addressed file storage (SHA-256) + append-only JSONL edit journal
+  checkpoint/       Full project state snapshots (manual + auto)
+  restore/          File restoration engine + conflict checker
+  analysis/         Blast radius, sentinels, watchdog (evaluated on each edit)
+  tui/              Terminal UI: modal system, dashboard, timeline, preview, panels
+    widgets/        Command palette, conversation panel, dashboard sparklines
+    filter.rs       Composable search/filter engine
+    session_diff.rs Point-in-time session comparison
+    alerts.rs       Configurable alert evaluator with auto-rearm
+    bookmarks.rs    Timeline position bookmarks
+  claude_log/       Claude Code conversation log parser (background thread)
+  hook/             Claude Code PostToolUse hook registration
+  import/           Multi-agent session import (Claude Code, Cursor, Codex CLI)
+  export/           Session export (Agent Trace JSON, git-ai git notes)
+  mcp/              MCP server (JSON-RPC stdio, 7 tools for AI self-correction)
+  theme/            19 color themes with runtime switching
 ```
+
+The daemon records file changes to an append-only JSONL edit journal in `.vibetracer/`. Every file version is stored in a content-addressed snapshot store keyed by SHA-256 hash. The TUI tails the edit log in real-time and renders the cockpit. Claude Code's conversation logs are parsed in a background thread. Analysis engines evaluate on each incoming edit and surface alerts. The layout uses a dynamic panel registry with focus cycling.
 
 Data is stored in `.vibetracer/` within your project directory. Add it to `.gitignore`.
 
-## Tech Stack
+---
 
-Rust, ratatui, crossterm, notify, similar, serde, serde_json, clap, sha2, regex, glob, chrono, libc
+## Installation
+
+```bash
+# From crates.io
+cargo install vibetracer
+
+# From source
+git clone https://github.com/omeedcs/vibetracer
+cd vibetracer
+cargo install --path .
+
+# Homebrew (macOS)
+brew install omeedcs/tap/vibetracer
+```
+
+**Requirements:** Rust 1.70+ (for installation from source)
+
+---
 
 ## Contributing
 

@@ -6,6 +6,7 @@ pub mod checkpoint;
 pub mod claude_log;
 pub mod config;
 pub mod daemon;
+pub mod demo;
 pub mod event;
 pub mod export;
 pub mod hook;

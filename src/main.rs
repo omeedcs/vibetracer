@@ -37,6 +37,8 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
+    /// Run an interactive demo showcasing all features
+    Demo,
     /// Replay a past session
     Replay { session_id: String },
     /// List past sessions
@@ -165,6 +167,13 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+        }
+
+        // ── Demo: interactive feature showcase ──────────────────────────────────
+        Some(Commands::Demo) => {
+            let project_path = resolve_path(cli.path.as_deref())?;
+            let config = load_config_or_default(&project_path);
+            vibetracer::demo::run_demo(project_path, config)?;
         }
 
         // ── Init: write auto-detected config ──────────────────────────────────

@@ -5,6 +5,7 @@ pub mod bookmarks;
 pub mod event_loop;
 pub mod filter;
 pub mod input;
+pub mod intro;
 pub mod layout;
 pub mod operation;
 pub mod playhead;
@@ -155,6 +156,19 @@ pub fn run_tui_with_options(
     execute!(stdout, crossterm::event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    // ── intro animation ──────────────────────────────────────────────────────
+    if !is_replay {
+        let theme = Theme::from_preset(&config.theme.preset);
+        let _ = intro::play_intro(
+            &mut terminal,
+            theme.bg,
+            theme.fg,
+            theme.accent_warm,
+            theme.fg_dim,
+            theme.accent_green,
+        );
+    }
 
     // ── app state ─────────────────────────────────────────────────────────────
     let mut app = options.initial_app.unwrap_or_default();
