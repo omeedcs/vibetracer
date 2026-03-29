@@ -9,6 +9,11 @@ use crate::event::EditEvent;
 use crate::snapshot::store::SnapshotStore;
 use crate::theme::Theme;
 use crate::tui::layout::AppLayout;
+use crate::claude_log::{ConversationTurn, TokenStats};
+use crate::tui::filter::Filter;
+use crate::tui::widgets::command_palette::CommandPalette;
+use crate::tui::widgets::conversation::ConversationState;
+use crate::tui::widgets::dashboard::DashboardState;
 
 /// Which primary pane currently has keyboard focus.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +65,31 @@ pub enum ToastStyle {
     Warning,
 }
 
+/// Vim-style modal system for the TUI.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Mode {
+    /// Default mode. Scrubbing, navigation, toggling panels.
+    Normal,
+    /// Focused timeline manipulation — zoom, pan, solo/mute, jump-to-file.
+    Timeline,
+    /// Deep-dive on selected edit/operation — metadata, diff, reasoning.
+    Inspect,
+    /// Filter edits by file, agent, time range, content, intent.
+    Search,
+}
+
+impl Mode {
+    /// Short label for status bar display.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Mode::Normal => "NORMAL",
+            Mode::Timeline => "TIMELINE",
+            Mode::Inspect => "INSPECT",
+            Mode::Search => "SEARCH",
+        }
+    }
+}
+
 /// Top-level application state for the TUI.
 pub struct App {
     pub edits: Vec<EditEvent>,
@@ -69,6 +99,34 @@ pub struct App {
     pub focused_pane: Pane,
     pub sidebar_visible: bool,
     pub sidebar_panel: SidebarPanel,
+
+    // ── cockpit mode system ──────────────────────────────────────────────────
+    /// Current vim-style mode.
+    pub mode: Mode,
+    /// Whether the dashboard panel (right side) is visible.
+    pub dashboard_visible: bool,
+    /// Search/filter input string (active in Search mode).
+    pub search_input: String,
+    /// Selected item index in the inspect/timeline modes.
+    pub mode_cursor: usize,
+    /// Command palette state.
+    pub command_palette: CommandPalette,
+    /// Dashboard panel state (sparklines, metrics).
+    pub dashboard_state: DashboardState,
+    /// Active search filter (applied when search is locked).
+    pub active_filter: Option<Filter>,
+    /// Cached filter match results (one bool per edit).
+    pub filter_matches: Vec<bool>,
+
+    // ── conversation / Claude integration ────────────────────────────────────
+    /// Parsed conversation turns from Claude Code logs.
+    pub conversation_turns: Vec<ConversationTurn>,
+    /// Conversation panel UI state.
+    pub conversation_state: ConversationState,
+    /// Aggregated token stats from Claude logs.
+    pub token_stats: TokenStats,
+    /// Whether conversation panel is visible (replaces dashboard).
+    pub conversation_visible: bool,
 
     pub solo_track: Option<String>,
     pub muted_tracks: Vec<String>,
@@ -140,6 +198,20 @@ impl App {
             focused_pane: Pane::Timeline,
             sidebar_visible: false,
             sidebar_panel: SidebarPanel::BlastRadius,
+
+            mode: Mode::Normal,
+            dashboard_visible: true,
+            search_input: String::new(),
+            mode_cursor: 0,
+            command_palette: CommandPalette::new(),
+            dashboard_state: DashboardState::new(),
+            active_filter: None,
+            filter_matches: Vec::new(),
+
+            conversation_turns: Vec::new(),
+            conversation_state: ConversationState::new(),
+            token_stats: TokenStats::default(),
+            conversation_visible: false,
 
             solo_track: None,
             muted_tracks: Vec::new(),
@@ -319,6 +391,90 @@ impl App {
         }
 
         result
+    }
+
+    /// Update dashboard state from current app data.
+    /// Called each frame to keep the dashboard in sync.
+    pub fn update_dashboard(&mut self) {
+        // File heatmap
+        let mut file_counts: HashMap<String, u32> = HashMap::new();
+        for edit in &self.edits {
+            *file_counts.entry(edit.file.clone()).or_insert(0) += 1;
+        }
+        let mut file_heat: Vec<(String, u32)> = file_counts.into_iter().collect();
+        file_heat.sort_by(|a, b| b.1.cmp(&a.1));
+        self.dashboard_state.file_heat = file_heat;
+
+        // Agent status
+        let mut agent_counts: HashMap<String, (u32, i64)> = HashMap::new(); // (count, last_ts)
+        for edit in &self.edits {
+            if let Some(ref label) = edit.agent_label {
+                let entry = agent_counts.entry(label.clone()).or_insert((0, 0));
+                entry.0 += 1;
+                entry.1 = entry.1.max(edit.ts);
+            }
+        }
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let mut agents: Vec<(String, u32, bool)> = agent_counts
+            .into_iter()
+            .map(|(label, (count, last_ts))| {
+                let active = (now_ms - last_ts) < 10_000; // active if seen in last 10s
+                (label, count, active)
+            })
+            .collect();
+        agents.sort_by(|a, b| b.1.cmp(&a.1));
+        self.dashboard_state.agent_status = agents;
+
+        // Operations
+        let mut op_counts: HashMap<String, (u32, bool)> = HashMap::new();
+        for edit in &self.edits {
+            if let Some(ref intent) = edit.operation_intent {
+                let entry = op_counts.entry(intent.clone()).or_insert((0, false));
+                entry.0 += 1;
+            }
+        }
+        let ops: Vec<(String, u32, bool)> = op_counts
+            .into_iter()
+            .map(|(name, (count, active))| (name, count, active))
+            .collect();
+        self.dashboard_state.operations = ops;
+
+        // Edit velocity (edits in last 60s)
+        let cutoff = now_ms - 60_000;
+        let recent_count = self.edits.iter().filter(|e| e.ts > cutoff).count();
+        self.dashboard_state.edit_velocity = recent_count as f64;
+
+        // Token/cost from Claude conversation logs
+        self.dashboard_state.tokens_in = self.token_stats.total_in;
+        self.dashboard_state.tokens_out = self.token_stats.total_out;
+        self.dashboard_state.total_cost = self.token_stats.total_cost;
+        if self.token_stats.total_in + self.token_stats.total_out > 0 {
+            self.dashboard_state.cache_hit_pct = (self.token_stats.total_cache_read as f64
+                / (self.token_stats.total_in + self.token_stats.total_out) as f64)
+                * 100.0;
+        }
+
+        // Analysis summaries from app state
+        self.dashboard_state.sentinel_fail = self.sentinel_violations.len() as u32;
+        self.dashboard_state.sentinel_failures = self
+            .sentinel_violations
+            .iter()
+            .map(|v| format!("{}: {}", v.rule_name, v.description))
+            .collect();
+
+        self.dashboard_state.watchdog_ok = self.watchdog_alerts.is_empty();
+        self.dashboard_state.watchdog_alerts = self
+            .watchdog_alerts
+            .iter()
+            .map(|a| format!("{} in {}", a.constant_pattern, a.file))
+            .collect();
+
+        if let Some((_, ref status)) = self.blast_radius_status {
+            self.dashboard_state.stale_count = status.stale.len() as u32;
+            self.dashboard_state.updated_count = status.updated.len() as u32;
+            self.dashboard_state.untouched_count = status.untouched.len() as u32;
+            self.dashboard_state.stale_files = status.stale.clone();
+        }
     }
 
     /// Display a toast notification in the status bar for 2 seconds.

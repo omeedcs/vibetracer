@@ -1,10 +1,14 @@
 pub mod blast_radius_panel;
+pub mod command_palette;
+pub mod conversation;
+pub mod dashboard;
 pub mod file_view;
 pub mod help_overlay;
 pub mod preview;
 pub mod restore_confirm;
 pub mod sentinel_panel;
 pub mod sidebar;
+pub mod sparkline;
 pub mod status_bar;
 pub mod timeline;
 pub mod watchdog_panel;

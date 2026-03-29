@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::event::EditEvent;
 use crate::recorder::Recorder;
 use crate::tui::{App, SidebarPanel, input, layout, widgets};
+use crate::tui::app::Mode;
 use anyhow::Result;
 use crossterm::event::{self as ct_event, Event, KeyEventKind};
 use ratatui::{
@@ -71,6 +72,7 @@ pub fn run_event_loop(
     checkpoint_manager: &CheckpointManager,
     fs_rx: Option<&mpsc::Receiver<PathBuf>>,
     edit_rx: Option<&mpsc::Receiver<EditEvent>>,
+    claude_log_rx: Option<&mpsc::Receiver<crate::claude_log::ConversationTurn>>,
     config: &Config,
     project_path: &Path,
     session_dir: &Path,
@@ -103,6 +105,9 @@ pub fn run_event_loop(
 
     // ── main event loop ───────────────────────────────────────────────────────
     loop {
+        // ── update dashboard state ────────────────────────────────────────────
+        app.update_dashboard();
+
         // ── render ────────────────────────────────────────────────────────────
         let file_content_data: Option<(String, String)> = app.current_file_content(session_dir);
         let changed_lines = app.changed_lines_from_patch();
@@ -123,7 +128,7 @@ pub fn run_event_loop(
                 return;
             }
 
-            let lo = layout::compute_layout(area, app.sidebar_visible);
+            let lo = layout::compute_layout(area, app.sidebar_visible, app.dashboard_visible, app.conversation_visible);
 
             // Store layout for mouse routing.
             app.last_layout = Some(lo.clone());
@@ -185,15 +190,32 @@ pub fn run_event_loop(
                 }
             }
 
-            // Vertical separator between preview and sidebar.
-            if let Some(sidebar_rect) = lo.sidebar {
-                let sep_x = sidebar_rect.x.saturating_sub(1);
+            // Vertical separator between preview and right panel (sidebar or dashboard).
+            let right_panel_rect = lo.dashboard.or(lo.sidebar);
+            if let Some(right_rect) = right_panel_rect {
+                let sep_x = right_rect.x.saturating_sub(1);
                 let focused = app.focused_pane == crate::tui::Pane::Sidebar;
                 let color = if focused { focus_color } else { sep_color };
                 for y in lo.main_area.y..lo.main_area.y + lo.main_area.height {
                     if sep_x >= lo.main_area.x && sep_x < lo.main_area.x + lo.main_area.width {
                         buf.set_string(sep_x, y, "\u{2502}", Style::default().fg(color));
                     }
+                }
+            }
+
+            // Dashboard or conversation panel (right side, replaces sidebar when visible).
+            if let Some(dash_rect) = lo.dashboard {
+                if app.conversation_visible {
+                    widgets::conversation::ConversationPanel::new(
+                        &app.conversation_turns,
+                        app.conversation_state.scroll,
+                        &app.theme,
+                        app.conversation_state.selected_turn,
+                    )
+                    .render(dash_rect, buf);
+                } else {
+                    widgets::dashboard::DashboardPanel::new(&app.dashboard_state, &app.theme)
+                        .render(dash_rect, buf);
                 }
             }
 
@@ -212,28 +234,86 @@ pub fn run_event_loop(
             // Timeline.
             widgets::timeline::TimelineWidget::new(app).render(lo.timeline, buf);
 
-            // Keybindings bar.
+            // Keybindings bar — mode-aware.
             let kb_sep = Span::styled(" \u{2502} ", Style::default().fg(app.theme.separator));
-            let kb_gap = Span::styled("  ", Style::default());
             let kb_key = |k: &str| Span::styled(k.to_string(), Style::default().fg(app.theme.fg));
             let kb_desc = |d: &str| Span::styled(d.to_string(), Style::default().fg(app.theme.fg_muted));
 
-            let kb_line = Line::from(vec![
+            let mode_color = match app.mode {
+                Mode::Normal => app.theme.accent_green,
+                Mode::Timeline => app.theme.accent_blue,
+                Mode::Inspect => app.theme.accent_warm,
+                Mode::Search => app.theme.accent_purple,
+            };
+
+            let mut kb_spans: Vec<Span> = vec![
+                Span::styled(
+                    format!(" {} ", app.mode.label()),
+                    Style::default().fg(app.theme.bg).bg(mode_color),
+                ),
                 Span::styled(" ", Style::default()),
-                kb_key("b"), kb_desc(" blast"), kb_sep.clone(),
-                kb_key("i"), kb_desc(" sentinel"), kb_sep.clone(),
-                kb_key("w"), kb_desc(" watchdog"),
-                kb_gap.clone(),
-                kb_key("t"), kb_desc(" theme"), kb_sep.clone(),
-                kb_key("g"), kb_desc(" commands"),
-                kb_gap.clone(),
-                kb_key("?"), kb_desc(" help"),
-            ]);
+            ];
+
+            match app.mode {
+                Mode::Normal => {
+                    kb_spans.extend_from_slice(&[
+                        kb_key("Space"), kb_desc(":play"), kb_sep.clone(),
+                        kb_key("\u{2190}\u{2192}"), kb_desc(":scrub"), kb_sep.clone(),
+                        kb_key("t"), kb_desc(":timeline"), kb_sep.clone(),
+                        kb_key("i"), kb_desc(":inspect"), kb_sep.clone(),
+                        kb_key("/"), kb_desc(":search"), kb_sep.clone(),
+                        kb_key(":"), kb_desc(":cmd"), kb_sep.clone(),
+                        kb_key("d"), kb_desc(":diff"), kb_sep.clone(),
+                        kb_key("?"), kb_desc(":help"),
+                    ]);
+                }
+                Mode::Timeline => {
+                    kb_spans.extend_from_slice(&[
+                        kb_key("\u{2190}\u{2192}"), kb_desc(":pan"), kb_sep.clone(),
+                        kb_key("\u{2191}\u{2193}"), kb_desc(":select"), kb_sep.clone(),
+                        kb_key("+/-"), kb_desc(":zoom"), kb_sep.clone(),
+                        kb_key("s"), kb_desc(":solo"), kb_sep.clone(),
+                        kb_key("m"), kb_desc(":mute"), kb_sep.clone(),
+                        kb_key("Enter"), kb_desc(":jump"), kb_sep.clone(),
+                        kb_key("Esc"), kb_desc(":back"),
+                    ]);
+                }
+                Mode::Inspect => {
+                    kb_spans.extend_from_slice(&[
+                        kb_key("n"), kb_desc(":next"), kb_sep.clone(),
+                        kb_key("p"), kb_desc(":prev"), kb_sep.clone(),
+                        kb_key("d"), kb_desc(":diff"), kb_sep.clone(),
+                        kb_key("f"), kb_desc(":file"), kb_sep.clone(),
+                        kb_key("Esc"), kb_desc(":back"),
+                    ]);
+                }
+                Mode::Search => {
+                    kb_spans.extend_from_slice(&[
+                        kb_desc("type to filter"), kb_sep.clone(),
+                        kb_key("Enter"), kb_desc(":lock"), kb_sep.clone(),
+                        kb_key("Esc"), kb_desc(":clear"),
+                    ]);
+                }
+            }
+
+            let kb_line = Line::from(kb_spans);
             kb_line.render(lo.keybindings, buf);
 
             // Help overlay (on top of everything).
             if show_help {
                 widgets::help_overlay::HelpOverlay::new(&app.theme).render(area, buf);
+            }
+
+            // Command palette overlay (on top of everything).
+            if app.command_palette.visible {
+                widgets::command_palette::CommandPaletteWidget {
+                    palette: &app.command_palette,
+                    theme_bg: app.theme.bg,
+                    theme_fg: app.theme.fg,
+                    theme_fg_dim: app.theme.fg_muted,
+                    theme_accent: app.theme.accent_warm,
+                    theme_separator: app.theme.separator,
+                }.render(area, buf);
             }
         })?;
 
@@ -250,7 +330,28 @@ pub fn run_event_loop(
                 Event::Key(key) => {
                     // Ignore key-release events on platforms that emit them.
                     if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-                        let action = input::map_key(key);
+
+                        // ── Command palette key routing ──────────────────────
+                        if app.command_palette.visible {
+                            use crossterm::event::KeyCode;
+                            match key.code {
+                                KeyCode::Esc => { app.command_palette.close(); }
+                                KeyCode::Enter => {
+                                    if let Some(action_id) = app.command_palette.confirm() {
+                                        // Dispatch palette action by ID
+                                        dispatch_palette_action(app, &action_id);
+                                    }
+                                }
+                                KeyCode::Up => { app.command_palette.select_up(); }
+                                KeyCode::Down => { app.command_palette.select_down(); }
+                                KeyCode::Backspace => { app.command_palette.pop_char(); }
+                                KeyCode::Char(c) => { app.command_palette.push_char(c); }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        let action = input::map_key(key, &app.mode);
 
                         match action {
                             input::Action::Quit => break,
@@ -264,6 +365,10 @@ pub fn run_event_loop(
 
                             input::Action::Help => {
                                 show_help = !show_help;
+                            }
+
+                            input::Action::OpenCommandPalette => {
+                                app.command_palette.open();
                             }
 
                             input::Action::Checkpoint => {
@@ -501,6 +606,20 @@ pub fn run_event_loop(
             }
         }
 
+        // ── drain Claude Code conversation log updates ────────────────────────
+        if let Some(rx) = claude_log_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(turn) => {
+                        app.conversation_turns.push(turn);
+                        app.token_stats = crate::claude_log::compute_stats(&app.conversation_turns);
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            }
+        }
+
         // Frame-rate-aware playback
         if let crate::tui::PlaybackState::Playing { speed } = &app.playback {
             let interval = Duration::from_millis(500 / (*speed as u64).max(1));
@@ -528,4 +647,114 @@ pub fn run_event_loop(
     }
 
     Ok(())
+}
+
+/// Register all default palette entries.
+pub fn register_palette_entries(palette: &mut widgets::command_palette::CommandPalette) {
+    use widgets::command_palette::PaletteEntry;
+
+    let entries = [
+        // Navigation
+        ("play_pause", "Play / Pause", Some("Space"), "Playback"),
+        ("scrub_left", "Scrub Left", Some("\u{2190}"), "Playback"),
+        ("scrub_right", "Scrub Right", Some("\u{2192}"), "Playback"),
+        // Modes
+        ("mode_timeline", "Enter Timeline Mode", Some("t"), "Mode"),
+        ("mode_inspect", "Enter Inspect Mode", Some("i"), "Mode"),
+        ("mode_search", "Enter Search Mode", Some("/"), "Mode"),
+        // View
+        ("toggle_diff", "Toggle Diff / File View", Some("d"), "View"),
+        ("toggle_commands", "Toggle Command View", Some("g"), "View"),
+        ("toggle_dashboard", "Toggle Dashboard", Some("D"), "View"),
+        ("toggle_conversation", "Toggle Conversation", Some("C"), "View"),
+        ("toggle_blame", "Toggle Blame View", Some("B"), "View"),
+        ("toggle_annotations", "Toggle Annotations", Some("A"), "View"),
+        ("zoom_in", "Zoom Timeline In", Some("+"), "View"),
+        ("zoom_out", "Zoom Timeline Out", Some("-"), "View"),
+        ("zoom_reset", "Zoom Timeline Reset", Some("0"), "View"),
+        // Analysis
+        ("toggle_blast", "Toggle Blast Radius", Some("b"), "Analysis"),
+        ("toggle_watchdog", "Toggle Watchdog", Some("w"), "Analysis"),
+        // Tracks
+        ("solo_track", "Solo Track", Some("s"), "Track"),
+        ("mute_track", "Mute Track", Some("m"), "Track"),
+        // Actions
+        ("restore", "Restore File at Playhead", Some("R"), "Action"),
+        ("undo_restore", "Undo Restore", Some("u"), "Action"),
+        ("checkpoint", "Create Checkpoint", Some("c"), "Action"),
+        ("bookmark", "Create Bookmark", Some("M"), "Action"),
+        ("jump_bookmark", "Jump to Bookmark", Some("'"), "Action"),
+        // Theme
+        ("theme_next", "Next Theme", None, "Theme"),
+        ("theme_dark", "Theme: Dark", None, "Theme"),
+        ("theme_catppuccin", "Theme: Catppuccin Mocha", None, "Theme"),
+        ("theme_gruvbox", "Theme: Gruvbox Dark", None, "Theme"),
+        ("theme_tokyo", "Theme: Tokyo Night", None, "Theme"),
+        ("theme_dracula", "Theme: Dracula", None, "Theme"),
+        ("theme_nord", "Theme: Nord", None, "Theme"),
+        ("theme_rose_pine", "Theme: Rose Pine", None, "Theme"),
+        // Session
+        ("quit", "Quit", Some("q"), "Session"),
+        ("quit_daemon", "Quit + Stop Daemon", Some("Q"), "Session"),
+    ];
+
+    for (id, label, shortcut, category) in entries {
+        palette.register(PaletteEntry {
+            id: id.to_string(),
+            label: label.to_string(),
+            shortcut: shortcut.map(|s| s.to_string()),
+            category: category.to_string(),
+        });
+    }
+}
+
+/// Dispatch an action chosen from the command palette.
+fn dispatch_palette_action(app: &mut App, action_id: &str) {
+    use crate::theme::Theme;
+
+    match action_id {
+        "play_pause" => { app.toggle_play(); app.playback_flash = Some(std::time::Instant::now()); }
+        "scrub_left" => app.scrub_left(),
+        "scrub_right" => app.scrub_right(),
+        "mode_timeline" => { app.mode = Mode::Timeline; app.mode_cursor = 0; app.focused_pane = crate::tui::Pane::Timeline; }
+        "mode_inspect" => { app.mode = Mode::Inspect; }
+        "mode_search" => { app.mode = Mode::Search; app.search_input.clear(); }
+        "toggle_diff" => input::apply_action(app, input::Action::TogglePreviewMode),
+        "toggle_commands" => input::apply_action(app, input::Action::ToggleCommandView),
+        "toggle_dashboard" => input::apply_action(app, input::Action::ToggleDashboard),
+        "toggle_conversation" => input::apply_action(app, input::Action::ToggleConversation),
+        "toggle_blame" => input::apply_action(app, input::Action::ToggleBlame),
+        "toggle_annotations" => input::apply_action(app, input::Action::ToggleAnnotations),
+        "toggle_blast" => input::apply_action(app, input::Action::ToggleBlastRadius),
+        "toggle_watchdog" => input::apply_action(app, input::Action::ToggleWatchdog),
+        "zoom_in" => input::apply_action(app, input::Action::ZoomTimelineIn),
+        "zoom_out" => input::apply_action(app, input::Action::ZoomTimelineOut),
+        "zoom_reset" => input::apply_action(app, input::Action::ZoomTimelineReset),
+        "solo_track" => input::apply_action(app, input::Action::SoloTrack),
+        "mute_track" => input::apply_action(app, input::Action::MuteTrack),
+        "restore" => {} // Handled externally in event loop
+        "undo_restore" => {} // Handled externally in event loop
+        "checkpoint" => {} // Handled externally in event loop
+        "bookmark" => input::apply_action(app, input::Action::CreateBookmark),
+        "jump_bookmark" => input::apply_action(app, input::Action::JumpToBookmark),
+        "theme_next" => input::apply_action(app, input::Action::CycleTheme),
+        "quit" => app.should_quit = true,
+        "quit_daemon" => app.should_quit = true,
+        id if id.starts_with("theme_") => {
+            let name = match id {
+                "theme_dark" => "dark",
+                "theme_catppuccin" => "catppuccin-mocha",
+                "theme_gruvbox" => "gruvbox-dark",
+                "theme_tokyo" => "tokyo-night",
+                "theme_dracula" => "dracula",
+                "theme_nord" => "nord",
+                "theme_rose_pine" => "rose-pine",
+                _ => return,
+            };
+            app.theme = Theme::from_preset(name);
+            app.theme_name = name.to_string();
+            app.theme_flash = Some(std::time::Instant::now());
+        }
+        _ => {}
+    }
 }

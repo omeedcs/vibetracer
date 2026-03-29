@@ -8,6 +8,7 @@ pub struct AppLayout {
     pub main_area: Rect,
     pub preview: Rect,
     pub sidebar: Option<Rect>,
+    pub dashboard: Option<Rect>,
     pub sep_after_main: Rect,
     pub timeline: Rect,
     pub sep_after_timeline: Rect,
@@ -19,14 +20,21 @@ pub struct AppLayout {
 /// Vertical split:
 ///   - 1 line  : status bar
 ///   - 1 line  : separator
-///   - flexible: main area  (preview + optional sidebar)
+///   - flexible: main area  (preview + optional sidebar/dashboard)
 ///   - 1 line  : separator
-///   - 8 lines : timeline
+///   - 4-8 lines : timeline
 ///   - 1 line  : separator
 ///   - 1 line  : keybindings bar
 ///
-/// If `sidebar_visible`, the main area is split 65% / 35% horizontally.
-pub fn compute_layout(area: Rect, sidebar_visible: bool) -> AppLayout {
+/// The right panel can be either the old sidebar (blast radius, etc.)
+/// or the new dashboard panel. Dashboard takes precedence when both are
+/// requested.
+pub fn compute_layout(
+    area: Rect,
+    sidebar_visible: bool,
+    dashboard_visible: bool,
+    conversation_visible: bool,
+) -> AppLayout {
     let timeline_height = if area.height < 15 {
         4
     } else if area.height < 25 {
@@ -56,14 +64,23 @@ pub fn compute_layout(area: Rect, sidebar_visible: bool) -> AppLayout {
     let sep_after_timeline = vertical[5];
     let keybindings = vertical[6];
 
-    let (preview, sidebar) = if sidebar_visible {
+    let has_right_panel = dashboard_visible || sidebar_visible || conversation_visible;
+
+    let (preview, sidebar, dashboard) = if has_right_panel {
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
             .split(main_area);
-        (horizontal[0], Some(horizontal[1]))
+
+        if dashboard_visible || conversation_visible {
+            // Dashboard or conversation takes the right panel
+            (horizontal[0], None, Some(horizontal[1]))
+        } else {
+            // Old-style sidebar
+            (horizontal[0], Some(horizontal[1]), None)
+        }
     } else {
-        (main_area, None)
+        (main_area, None, None)
     };
 
     AppLayout {
@@ -72,6 +89,7 @@ pub fn compute_layout(area: Rect, sidebar_visible: bool) -> AppLayout {
         main_area,
         preview,
         sidebar,
+        dashboard,
         sep_after_main,
         timeline,
         sep_after_timeline,

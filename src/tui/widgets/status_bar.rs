@@ -7,11 +7,12 @@ use ratatui::{
 };
 
 use crate::tui::{App, PlaybackState};
+use crate::tui::app::Mode;
 
 /// Duration (in seconds) to flash the theme name after a theme change.
 const THEME_FLASH_SECS: u64 = 2;
 
-/// A single-line status bar widget.
+/// A single-line dense status bar widget (htop-style).
 pub struct StatusBar<'a> {
     pub app: &'a App,
 }
@@ -28,25 +29,37 @@ impl<'a> StatusBar<'a> {
         let m = (secs % 3600) / 60;
         let s = secs % 60;
         if h > 0 {
-            format!("{h}h{m:02}m{s:02}s")
+            format!("{h}h{m:02}m")
         } else {
             format!("{m}m{s:02}s")
         }
     }
 
-    /// Return the agent label for the current edit, if any.
     fn current_agent_label(&self) -> Option<&str> {
         self.app
             .current_edit()
             .and_then(|e| e.agent_label.as_deref())
     }
 
-    /// Whether the theme flash is currently active (within THEME_FLASH_SECS).
     fn theme_flash_active(&self) -> bool {
         self.app
             .theme_flash
             .map(|t| t.elapsed().as_secs() < THEME_FLASH_SECS)
             .unwrap_or(false)
+    }
+
+    fn unique_file_count(&self) -> usize {
+        self.app.tracks.len()
+    }
+
+    fn unique_agent_count(&self) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        for edit in &self.app.edits {
+            if let Some(ref agent_id) = edit.agent_id {
+                seen.insert(agent_id.as_str());
+            }
+        }
+        seen.len()
     }
 }
 
@@ -54,43 +67,75 @@ impl Widget for StatusBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = &self.app.theme;
 
-        let color_default: Color = t.fg_muted;
-        let color_separator: Color = t.separator;
-        let color_value: Color = t.fg;
-        let color_connected: Color = t.accent_green;
-        let color_watching: Color = t.fg_muted;
+        let color_sep: Color = t.separator;
+        let color_val: Color = t.fg;
+        let color_dim: Color = t.fg_muted;
         let color_live: Color = t.accent_green;
         let color_paused: Color = t.fg_muted;
         let color_speed: Color = t.accent_purple;
         let color_accent: Color = t.accent_warm;
 
-        let sep = Span::styled(" \u{2502} ", Style::default().fg(color_separator));
+        let sep = Span::styled(" \u{2502} ", Style::default().fg(color_sep));
 
-        // ── left side ────────────────────────────────────────────────────────
-        let elapsed = self.elapsed_str();
-        let edit_count = self.app.edits.len();
-        let ckpt_count = self.app.checkpoint_ids.len();
+        // ── left side: mode + metrics ────────────────────────────────────────
+        let mode_color = match self.app.mode {
+            Mode::Normal => t.accent_green,
+            Mode::Timeline => t.accent_blue,
+            Mode::Inspect => t.accent_warm,
+            Mode::Search => t.accent_purple,
+        };
 
         let mut left_spans = vec![
-            Span::styled("vibetracer", Style::default().fg(color_default)),
-            sep.clone(),
-            Span::styled(elapsed, Style::default().fg(color_value)),
-            sep.clone(),
             Span::styled(
-                format!("{edit_count} edits"),
-                Style::default().fg(color_value),
+                format!(" {} ", self.app.mode.label()),
+                Style::default().fg(t.bg).bg(mode_color),
             ),
             sep.clone(),
-            Span::styled(
-                format!("{ckpt_count} ckpts"),
-                Style::default().fg(color_value),
-            ),
         ];
 
-        // Command view indicator
-        if self.app.command_view {
+        // Playback state
+        let pb_flashing = self.app.playback_flash
+            .map(|t| t.elapsed().as_millis() < 500)
+            .unwrap_or(false);
+
+        match &self.app.playback {
+            PlaybackState::Live => {
+                let c = if pb_flashing { color_accent } else { color_live };
+                left_spans.push(Span::styled("live", Style::default().fg(c)));
+            }
+            PlaybackState::Paused => {
+                let c = if pb_flashing { color_accent } else { color_paused };
+                left_spans.push(Span::styled("paused", Style::default().fg(c)));
+            }
+            PlaybackState::Playing { speed } => {
+                let c = if pb_flashing { color_accent } else { color_speed };
+                left_spans.push(Span::styled(format!("{speed}x"), Style::default().fg(c)));
+            }
+        }
+
+        left_spans.push(sep.clone());
+
+        // Core counters
+        let edit_count = self.app.edits.len();
+        let file_count = self.unique_file_count();
+        let agent_count = self.unique_agent_count();
+
+        left_spans.push(Span::styled(
+            format!("{edit_count} edits"),
+            Style::default().fg(color_val),
+        ));
+        left_spans.push(sep.clone());
+        left_spans.push(Span::styled(
+            format!("{file_count} files"),
+            Style::default().fg(color_val),
+        ));
+
+        if agent_count > 0 {
             left_spans.push(sep.clone());
-            left_spans.push(Span::styled("commands", Style::default().fg(color_accent)));
+            left_spans.push(Span::styled(
+                format!("{agent_count} agents"),
+                Style::default().fg(color_val),
+            ));
         }
 
         // Agent label for current edit
@@ -102,21 +147,11 @@ impl Widget for StatusBar<'_> {
             ));
         }
 
-        // Edit timestamp
-        if let Some(edit) = self.app.current_edit() {
-            let session_start_ms = self.app.session_start * 1000;
-            let offset_secs = ((edit.ts - session_start_ms).max(0) / 1000) as u64;
-            let m = offset_secs / 60;
-            let s = offset_secs % 60;
-            left_spans.push(sep.clone());
-            left_spans.push(Span::styled(
-                format!("@{}m{:02}s", m, s),
-                Style::default().fg(color_value),
-            ));
-            // Edit position
+        // Edit position
+        if !self.app.edits.is_empty() {
             left_spans.push(Span::styled(
                 format!(" #{}/{}", self.app.playhead + 1, self.app.edits.len()),
-                Style::default().fg(color_default),
+                Style::default().fg(color_dim),
             ));
         }
 
@@ -126,24 +161,36 @@ impl Widget for StatusBar<'_> {
             left_spans.push(Span::styled("diff", Style::default().fg(color_accent)));
         }
 
+        // Command view indicator
+        if self.app.command_view {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled("cmds", Style::default().fg(color_accent)));
+        }
+
+        // Search filter indicator (when filter is locked in Normal mode)
+        if self.app.mode == Mode::Normal && !self.app.search_input.is_empty() {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled(
+                format!("/{}", self.app.search_input),
+                Style::default().fg(t.accent_purple),
+            ));
+        }
+
+        // Search mode: show live input
+        if self.app.mode == Mode::Search {
+            left_spans.push(sep.clone());
+            left_spans.push(Span::styled("/", Style::default().fg(t.accent_purple)));
+            left_spans.push(Span::styled(
+                self.app.search_input.as_str(),
+                Style::default().fg(color_val),
+            ));
+            left_spans.push(Span::styled("\u{2588}", Style::default().fg(t.accent_purple)));
+        }
+
         // ── right side ───────────────────────────────────────────────────────
-        let (conn_text, conn_color) = if self.app.connected {
-            ("connected", color_connected)
-        } else {
-            ("watching", color_watching)
-        };
-
-        let (pb_text, pb_color) = match &self.app.playback {
-            PlaybackState::Live => ("live", color_live),
-            PlaybackState::Paused => ("paused", color_paused),
-            PlaybackState::Playing { speed } => {
-                let _ = speed;
-                ("", color_speed)
-            }
-        };
-
         let mut right_spans: Vec<Span> = Vec::new();
 
+        // Toast notification
         if self.app.toast_active() {
             if let Some(ref msg) = self.app.toast_message {
                 let toast_color = match self.app.toast_style {
@@ -156,7 +203,7 @@ impl Widget for StatusBar<'_> {
             }
         }
 
-        // Theme name flash (shown for 2s after theme change)
+        // Theme flash
         if self.theme_flash_active() {
             right_spans.push(Span::styled(
                 self.app.theme_name.as_str(),
@@ -165,39 +212,20 @@ impl Widget for StatusBar<'_> {
             right_spans.push(sep.clone());
         }
 
-        right_spans.push(Span::styled(conn_text, Style::default().fg(conn_color)));
-        right_spans.push(sep.clone());
-
-        let pb_flashing = self.app.playback_flash
-            .map(|t| t.elapsed().as_millis() < 500)
-            .unwrap_or(false);
-
-        match &self.app.playback {
-            PlaybackState::Playing { speed } => {
-                let color = if pb_flashing { color_accent } else { color_speed };
-                right_spans.push(Span::styled(
-                    format!("{speed}x"),
-                    Style::default().fg(color),
-                ));
-            }
-            _ => {
-                let color = if pb_flashing { color_accent } else { pb_color };
-                right_spans.push(Span::styled(pb_text, Style::default().fg(color)));
-            }
-        }
+        // Elapsed time (right-aligned)
+        let elapsed = self.elapsed_str();
+        right_spans.push(Span::styled(elapsed, Style::default().fg(color_dim)));
 
         // ── compose and render ───────────────────────────────────────────────
         let left_line = Line::from(left_spans);
         let right_line = Line::from(right_spans);
 
-        // Measure right side width so we can right-align it.
         let right_width: u16 = right_line
             .spans
             .iter()
             .map(|s| s.content.len() as u16)
             .sum();
 
-        // Overflow protection: truncate left side if it would overlap the right side.
         let left_width: u16 = left_line.spans.iter().map(|s| s.content.len() as u16).sum();
         let available = area.width.saturating_sub(right_width + 2);
 
@@ -222,10 +250,8 @@ impl Widget for StatusBar<'_> {
             left_line
         };
 
-        // Render left side.
         left_line.render(area, buf);
 
-        // Render right side flush to the right edge.
         if area.width >= right_width {
             let right_area = Rect {
                 x: area.x + area.width - right_width,

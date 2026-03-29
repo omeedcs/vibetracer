@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod auto_detect;
 pub mod checkpoint;
+pub mod claude_log;
 pub mod config;
 pub mod daemon;
 pub mod event;

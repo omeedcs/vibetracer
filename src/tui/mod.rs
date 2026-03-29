@@ -1,5 +1,6 @@
 pub mod app;
 pub mod event_loop;
+pub mod filter;
 pub mod input;
 pub mod layout;
 pub mod operation;
@@ -163,6 +164,24 @@ pub fn run_tui_with_options(
     app.theme = Theme::from_preset(&config.theme.preset);
     app.theme_name = config.theme.preset.clone();
 
+    // Register command palette entries.
+    event_loop::register_palette_entries(&mut app.command_palette);
+
+    // ── Claude Code log integration ──────────────────────────────────────────
+    // Try to find and tail Claude Code's conversation log for this project.
+    let claude_log_rx: Option<mpsc::Receiver<crate::claude_log::ConversationTurn>> =
+        if let Some(log_path) = crate::claude_log::find_log_path(&project_path) {
+            let (existing_turns, rx) = crate::claude_log::tail_log(&log_path);
+            // Load existing conversation turns
+            for turn in existing_turns {
+                app.conversation_turns.push(turn);
+            }
+            app.token_stats = crate::claude_log::compute_stats(&app.conversation_turns);
+            Some(rx)
+        } else {
+            None
+        };
+
     // ── event loop ────────────────────────────────────────────────────────────
     event_loop::run_event_loop(
         &mut terminal,
@@ -171,6 +190,7 @@ pub fn run_tui_with_options(
         &checkpoint_manager,
         fs_rx_opt.as_ref(),
         edit_rx_opt.as_ref(),
+        claude_log_rx.as_ref(),
         &config,
         &project_path,
         &session_dir,

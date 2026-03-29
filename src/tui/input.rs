@@ -1,7 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::theme::Theme;
-use crate::tui::app::PreviewMode;
+use crate::tui::app::{Mode, PreviewMode};
+use crate::tui::filter::Filter;
 use crate::tui::{App, Pane, SidebarPanel};
 
 /// All actions that a keypress can trigger.
@@ -35,11 +36,64 @@ pub enum Action {
     ZoomTimelineOut,
     ZoomTimelineReset,
     SoloAgent(u8),
+
+    // ── mode transitions ─────────────────────────────────────────────────────
+    EnterTimelineMode,
+    EnterInspectMode,
+    EnterSearchMode,
+    ExitMode, // back to Normal
+    OpenCommandPalette,
+    ToggleDashboard,
+
+    // ── search mode actions ──────────────────────────────────────────────────
+    SearchInput(char),
+    SearchBackspace,
+    SearchConfirm,
+
+    // ── timeline mode actions ────────────────────────────────────────────────
+    TimelinePanLeft,
+    TimelinePanRight,
+    TimelineSelectUp,
+    TimelineSelectDown,
+    TimelineJumpToEdit,
+
+    // ── inspect mode actions ─────────────────────────────────────────────────
+    InspectNext,
+    InspectPrev,
+    InspectToggleDiff,
+    InspectShowFile,
+    InspectShowConversation,
+    InspectExpand,
+
+    // ── blame / annotations ──────────────────────────────────────────────────
+    ToggleBlame,
+    ToggleAnnotations,
+
+    // ── bookmarks ────────────────────────────────────────────────────────────
+    CreateBookmark,
+    JumpToBookmark,
+
+    // ── conversation panel ──────────────────────────────────────────────────
+    ToggleConversation,
+
+    // ── panel maximize ───────────────────────────────────────────────────────
+    MaximizePanel,
+
     Noop,
 }
 
-/// Map a crossterm `KeyEvent` to an `Action`.
-pub fn map_key(key: KeyEvent) -> Action {
+/// Map a crossterm `KeyEvent` to an `Action`, respecting the current mode.
+pub fn map_key(key: KeyEvent, mode: &Mode) -> Action {
+    match mode {
+        Mode::Normal => map_key_normal(key),
+        Mode::Timeline => map_key_timeline(key),
+        Mode::Inspect => map_key_inspect(key),
+        Mode::Search => map_key_search(key),
+    }
+}
+
+/// Key mappings for Normal mode.
+fn map_key_normal(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
         // Quit
         (KeyCode::Char('q'), KeyModifiers::NONE) => Action::Quit,
@@ -62,6 +116,13 @@ pub fn map_key(key: KeyEvent) -> Action {
         // Reattach detached file to global playhead
         (KeyCode::Char('a'), KeyModifiers::NONE) => Action::Reattach,
 
+        // Mode transitions
+        (KeyCode::Char('t'), KeyModifiers::NONE) => Action::EnterTimelineMode,
+        (KeyCode::Char('i'), KeyModifiers::NONE) => Action::EnterInspectMode,
+        (KeyCode::Char('/'), _) => Action::EnterSearchMode,
+        (KeyCode::Char(':'), _) => Action::OpenCommandPalette,
+        (KeyCode::Char('p'), m) if m.contains(KeyModifiers::CONTROL) => Action::OpenCommandPalette,
+
         // Toggle command/operation view
         (KeyCode::Char('g'), KeyModifiers::NONE) => Action::ToggleCommandView,
 
@@ -83,14 +144,27 @@ pub fn map_key(key: KeyEvent) -> Action {
 
         // Sidebar panel toggles
         (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ToggleBlastRadius,
-        (KeyCode::Char('i'), KeyModifiers::NONE) => Action::ToggleSentinels,
         (KeyCode::Char('w'), KeyModifiers::NONE) => Action::ToggleWatchdog,
 
-        // Theme cycling
-        (KeyCode::Char('t'), KeyModifiers::NONE) => Action::CycleTheme,
+        // Dashboard toggle
+        (KeyCode::Char('D'), _) => Action::ToggleDashboard,
 
         // Preview mode toggle
         (KeyCode::Char('d'), KeyModifiers::NONE) => Action::TogglePreviewMode,
+
+        // Blame and annotations
+        (KeyCode::Char('B'), _) => Action::ToggleBlame,
+        (KeyCode::Char('A'), _) => Action::ToggleAnnotations,
+
+        // Bookmarks
+        (KeyCode::Char('M'), _) => Action::CreateBookmark,
+        (KeyCode::Char('\''), _) => Action::JumpToBookmark,
+
+        // Conversation panel toggle
+        (KeyCode::Char('C'), _) => Action::ToggleConversation,
+
+        // Panel maximize
+        (KeyCode::Char('z'), KeyModifiers::NONE) => Action::MaximizePanel,
 
         // Preview scroll (when preview is focused)
         (KeyCode::Char('j'), KeyModifiers::NONE) => Action::ScrollPreviewDown,
@@ -105,17 +179,65 @@ pub fn map_key(key: KeyEvent) -> Action {
         // Focus cycling
         (KeyCode::Tab, _) => Action::CycleFocus,
 
-        // Solo agent (1-9)
+        // Solo agent (1-9) — only in command view
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => Action::SoloAgent(c as u8 - b'0'),
 
         _ => Action::Noop,
     }
 }
 
+/// Key mappings for Timeline mode.
+fn map_key_timeline(key: KeyEvent) -> Action {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Action::ExitMode,
+        (KeyCode::Left, _) => Action::TimelinePanLeft,
+        (KeyCode::Right, _) => Action::TimelinePanRight,
+        (KeyCode::Up, _) => Action::TimelineSelectUp,
+        (KeyCode::Down, _) => Action::TimelineSelectDown,
+        (KeyCode::Char('+'), _) => Action::ZoomTimelineIn,
+        (KeyCode::Char('-'), _) => Action::ZoomTimelineOut,
+        (KeyCode::Char('='), _) => Action::ZoomTimelineReset,
+        (KeyCode::Char('s'), _) => Action::SoloTrack,
+        (KeyCode::Char('m'), _) => Action::MuteTrack,
+        (KeyCode::Enter, _) => Action::TimelineJumpToEdit,
+        (KeyCode::Char('q'), _) => Action::Quit,
+        _ => Action::Noop,
+    }
+}
+
+/// Key mappings for Inspect mode.
+fn map_key_inspect(key: KeyEvent) -> Action {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Action::ExitMode,
+        (KeyCode::Char('n'), _) => Action::InspectNext,
+        (KeyCode::Char('p'), KeyModifiers::NONE) => Action::InspectPrev,
+        (KeyCode::Char('d'), _) => Action::InspectToggleDiff,
+        (KeyCode::Char('f'), _) => Action::InspectShowFile,
+        (KeyCode::Char('c'), _) => Action::InspectShowConversation,
+        (KeyCode::Enter, _) => Action::InspectExpand,
+        (KeyCode::Char('q'), _) => Action::Quit,
+        _ => Action::Noop,
+    }
+}
+
+/// Key mappings for Search mode.
+fn map_key_search(key: KeyEvent) -> Action {
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Action::ExitMode,
+        (KeyCode::Enter, _) => Action::SearchConfirm,
+        (KeyCode::Backspace, _) => Action::SearchBackspace,
+        (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::SearchInput(c),
+        (KeyCode::Up, _) => Action::ScrollPreviewUp,
+        (KeyCode::Down, _) => Action::ScrollPreviewDown,
+        _ => Action::Noop,
+    }
+}
+
 /// Apply an `Action` to the `App` state.
 ///
-/// Some actions (Checkpoint, Restore, UndoRestore, Help) require external
-/// coordination and are intentional no-ops here; the caller handles them.
+/// Some actions (Checkpoint, Restore, UndoRestore, Help, OpenCommandPalette)
+/// require external coordination and are intentional no-ops here; the caller
+/// handles them.
 pub fn apply_action(app: &mut App, action: Action) {
     match action {
         Action::Quit | Action::QuitAndStopDaemon => app.should_quit = true,
@@ -149,7 +271,6 @@ pub fn apply_action(app: &mut App, action: Action) {
             if let Some(edit) = app.current_edit() {
                 let file = edit.file.clone();
                 if !app.detached_files.contains(&file) {
-                    // Auto-detach at the current per-file position
                     let pos = app.file_playheads.get(&file).copied().unwrap_or(0);
                     app.detached_files.insert(file.clone());
                     app.file_playheads.insert(file.clone(), pos);
@@ -182,6 +303,111 @@ pub fn apply_action(app: &mut App, action: Action) {
             }
         }
 
+        // ── mode transitions ─────────────────────────────────────────────────
+        Action::EnterTimelineMode => {
+            app.mode = Mode::Timeline;
+            app.mode_cursor = 0;
+            app.focused_pane = Pane::Timeline;
+        }
+        Action::EnterInspectMode => {
+            app.mode = Mode::Inspect;
+        }
+        Action::EnterSearchMode => {
+            app.mode = Mode::Search;
+            app.search_input.clear();
+        }
+        Action::ExitMode => {
+            // If exiting search mode, clear the filter
+            if app.mode == Mode::Search {
+                app.search_input.clear();
+                app.active_filter = None;
+                app.filter_matches.clear();
+            }
+            app.mode = Mode::Normal;
+        }
+        Action::ToggleDashboard => {
+            app.dashboard_visible = !app.dashboard_visible;
+            if app.dashboard_visible {
+                app.conversation_visible = false;
+            }
+        }
+        Action::ToggleConversation => {
+            app.conversation_visible = !app.conversation_visible;
+            if app.conversation_visible {
+                app.dashboard_visible = false;
+            }
+        }
+
+        // ── search mode actions ──────────────────────────────────────────────
+        Action::SearchInput(c) => {
+            app.search_input.push(c);
+        }
+        Action::SearchBackspace => {
+            app.search_input.pop();
+        }
+        Action::SearchConfirm => {
+            // Lock filter and return to Normal mode
+            if !app.search_input.is_empty() {
+                let session_start_ms = app.session_start * 1000;
+                let filter = Filter::parse(&app.search_input, session_start_ms);
+                let matches = crate::tui::filter::compute_matching_indices(&app.edits, &filter);
+                app.filter_matches = matches;
+                app.active_filter = Some(filter);
+            }
+            app.mode = Mode::Normal;
+        }
+
+        // ── timeline mode actions ────────────────────────────────────────────
+        Action::TimelinePanLeft => {
+            app.timeline_scroll = app.timeline_scroll.saturating_sub(5);
+        }
+        Action::TimelinePanRight => {
+            app.timeline_scroll += 5;
+        }
+        Action::TimelineSelectUp => {
+            app.mode_cursor = app.mode_cursor.saturating_sub(1);
+        }
+        Action::TimelineSelectDown => {
+            if !app.tracks.is_empty() {
+                app.mode_cursor = (app.mode_cursor + 1).min(app.tracks.len() - 1);
+            }
+        }
+        Action::TimelineJumpToEdit => {
+            // Jump the playhead to the first edit in the selected track
+            if let Some(track) = app.tracks.get(app.mode_cursor) {
+                if let Some(&first_idx) = track.edit_indices.first() {
+                    app.playhead = first_idx;
+                    app.playback = crate::tui::PlaybackState::Paused;
+                }
+            }
+        }
+
+        // ── inspect mode actions ─────────────────────────────────────────────
+        Action::InspectNext => {
+            if app.playhead + 1 < app.edits.len() {
+                app.playhead += 1;
+                app.playback = crate::tui::PlaybackState::Paused;
+            }
+        }
+        Action::InspectPrev => {
+            if app.playhead > 0 {
+                app.playhead -= 1;
+                app.playback = crate::tui::PlaybackState::Paused;
+            }
+        }
+        Action::InspectToggleDiff => {
+            app.preview_mode = match app.preview_mode {
+                PreviewMode::File => PreviewMode::Diff,
+                PreviewMode::Diff => PreviewMode::File,
+            };
+        }
+        Action::InspectShowFile => {
+            app.preview_mode = PreviewMode::File;
+        }
+        Action::InspectShowConversation | Action::InspectExpand => {
+            // Placeholder for Wave 2 conversation integration
+        }
+
         // Toggle command/operation view
         Action::ToggleCommandView => {
             app.command_view = !app.command_view;
@@ -197,16 +423,14 @@ pub fn apply_action(app: &mut App, action: Action) {
 
         // Preview scroll
         Action::ScrollPreviewUp => {
-            if app.focused_pane == Pane::Preview && app.preview_scroll > 0 {
+            if app.preview_scroll > 0 {
                 app.preview_scroll -= 1;
                 app.preview_scroll_target = app.preview_scroll;
             }
         }
         Action::ScrollPreviewDown => {
-            if app.focused_pane == Pane::Preview {
-                app.preview_scroll += 1;
-                app.preview_scroll_target = app.preview_scroll;
-            }
+            app.preview_scroll += 1;
+            app.preview_scroll_target = app.preview_scroll;
         }
 
         // Timeline zoom
@@ -261,7 +485,7 @@ pub fn apply_action(app: &mut App, action: Action) {
             app.focused_pane = match &app.focused_pane {
                 Pane::Preview => Pane::Timeline,
                 Pane::Timeline => {
-                    if app.sidebar_visible {
+                    if app.sidebar_visible || app.dashboard_visible {
                         Pane::Sidebar
                     } else {
                         Pane::Preview
@@ -296,7 +520,6 @@ pub fn apply_action(app: &mut App, action: Action) {
         }
 
         // Solo agent: filter timeline to only show edits from agent N.
-        // (Stored as solo_track with a special prefix so the timeline can distinguish)
         Action::SoloAgent(n) => {
             let mut seen = std::collections::HashSet::new();
             let mut agents: Vec<String> = Vec::new();
@@ -318,11 +541,24 @@ pub fn apply_action(app: &mut App, action: Action) {
             }
         }
 
+        // Blame / annotations / bookmarks / maximize — placeholders for later waves
+        Action::ToggleBlame
+        | Action::ToggleAnnotations
+        | Action::CreateBookmark
+        | Action::JumpToBookmark
+        | Action::MaximizePanel => {
+            app.show_toast(
+                "coming soon".to_string(),
+                crate::tui::app::ToastStyle::Info,
+            );
+        }
+
         // These actions require external handling; nothing to do in the state machine.
         Action::Restore
         | Action::UndoRestore
         | Action::Checkpoint
         | Action::Help
+        | Action::OpenCommandPalette
         | Action::Noop => {}
     }
 }
