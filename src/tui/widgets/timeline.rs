@@ -11,7 +11,7 @@ use crate::tui::App;
 const TRACK_NAME_WIDTH: usize = 20;
 const SEPARATOR: &str = " ";
 
-/// Horizontal per-file track timeline widget.
+/// Horizontal per-file track timeline widget styled like a non-linear editor.
 pub struct TimelineWidget<'a> {
     pub app: &'a App,
 }
@@ -80,7 +80,6 @@ impl<'a> TimelineWidget<'a> {
     }
 
     /// Look up the agent color for an edit at a given global index.
-    /// Returns None if the edit has no agent_id or the index is out of bounds.
     fn agent_color_for_edit(&self, edit_idx: usize) -> Option<Color> {
         let edit = self.app.edits.get(edit_idx)?;
         let agent_id = edit.agent_id.as_ref()?;
@@ -88,7 +87,6 @@ impl<'a> TimelineWidget<'a> {
         if agent_colors.is_empty() {
             return None;
         }
-        // Simple hash: sum of bytes mod color count.
         let hash: usize = agent_id.bytes().map(|b| b as usize).sum();
         Some(agent_colors[hash % agent_colors.len()])
     }
@@ -134,11 +132,9 @@ impl<'a> TimelineWidget<'a> {
 
         for i in 0..edits.len() {
             for j in (i + 1)..edits.len() {
-                // Only check within 5s window
                 if (edits[j].ts - edits[i].ts).unsigned_abs() > 5000 {
                     break;
                 }
-                // Same file, different agents
                 if edits[i].file == edits[j].file {
                     let agent_i = edits[i].agent_id.as_deref();
                     let agent_j = edits[j].agent_id.as_deref();
@@ -152,6 +148,46 @@ impl<'a> TimelineWidget<'a> {
 
         conflicts
     }
+
+    /// Collect operation regions: contiguous groups of edits sharing an
+    /// operation_intent, mapped to their column spans.
+    fn operation_regions(&self, bar_width: usize, total_edits: usize) -> Vec<OpRegion> {
+        if total_edits == 0 || bar_width == 0 {
+            return Vec::new();
+        }
+
+        let mut regions: Vec<OpRegion> = Vec::new();
+        let edits = &self.app.edits;
+
+        for (idx, edit) in edits.iter().enumerate() {
+            let intent = edit.operation_intent.as_deref().unwrap_or("");
+            if intent.is_empty() {
+                continue;
+            }
+            let col = self.edit_to_col(idx, bar_width, total_edits);
+
+            if let Some(last) = regions.last_mut() {
+                if last.label == intent {
+                    last.end_col = col;
+                    continue;
+                }
+            }
+            regions.push(OpRegion {
+                label: intent.to_string(),
+                start_col: col,
+                end_col: col,
+            });
+        }
+
+        regions
+    }
+}
+
+/// A named operation region spanning a column range in the timeline.
+struct OpRegion {
+    label: String,
+    start_col: usize,
+    end_col: usize,
 }
 
 impl Widget for TimelineWidget<'_> {
@@ -161,7 +197,6 @@ impl Widget for TimelineWidget<'_> {
         }
 
         let t = &self.app.theme;
-        let color_track_name: Color = t.fg;
         let color_bar_edit: Color = t.bar_filled;
         let color_bar_empty: Color = t.bar_empty;
         let color_playhead: Color = t.accent_warm;
@@ -173,15 +208,14 @@ impl Widget for TimelineWidget<'_> {
         let tracks = self.visible_tracks();
         let total_edits = self.app.edits.len();
 
-        // ── bar width (area minus track name and separator) ──────────────────
         let name_and_sep = TRACK_NAME_WIDTH + SEPARATOR.len();
         let bar_width = (area.width as usize).saturating_sub(name_and_sep);
         let conflict_indices = self.conflict_edit_indices();
 
-        // Empty state -- show a subtle waiting indicator instead of nothing.
+        // Empty state
         if tracks.is_empty() {
             if row < max_y {
-                row += 1; // skip a line
+                row += 1;
             }
             if row < max_y {
                 let waiting = "waiting for file changes...";
@@ -191,14 +225,90 @@ impl Widget for TimelineWidget<'_> {
             return;
         }
 
-        // ── 1. Time scale bar ──────────────────────────────────────────────────
+        let bar_x = area.x + name_and_sep as u16;
+
+        // ── 1. Operation region bar (clips) ────────────────────────────────────
+        if row < max_y && total_edits > 0 {
+            let regions = self.operation_regions(bar_width, total_edits);
+            // Use muted agent colors for clip backgrounds.
+            let clip_colors = [
+                dim_color(t.accent_blue, 60),
+                dim_color(t.accent_green, 60),
+                dim_color(t.accent_warm, 60),
+                dim_color(t.accent_purple, 60),
+                dim_color(t.accent_red, 60),
+            ];
+
+            // Render clip name label row.
+            // First fill the gutter with spaces.
+            buf.set_string(
+                area.x,
+                row,
+                &" ".repeat(name_and_sep.min(area.width as usize)),
+                Style::default(),
+            );
+
+            for (ri, region) in regions.iter().enumerate() {
+                let clip_bg = clip_colors[ri % clip_colors.len()];
+                let start = region.start_col.min(bar_width);
+                let end = (region.end_col + 1).min(bar_width);
+                let span_len = end.saturating_sub(start).max(1);
+
+                // Fill the clip region background.
+                for c in start..start + span_len {
+                    let cx = bar_x + c as u16;
+                    if cx < area.x + area.width {
+                        if let Some(cell) = buf.cell_mut((cx, row)) {
+                            cell.set_bg(clip_bg);
+                        }
+                    }
+                }
+
+                // Truncate label to fit within clip span, leaving room for padding.
+                let max_label = span_len.saturating_sub(1);
+                if max_label > 0 {
+                    let label: String = if region.label.len() > max_label {
+                        region.label.chars().take(max_label.saturating_sub(1)).collect::<String>() + "\u{2026}"
+                    } else {
+                        region.label.clone()
+                    };
+                    let lx = bar_x + start as u16;
+                    buf.set_string(
+                        lx,
+                        row,
+                        &label,
+                        Style::default().fg(t.fg).bg(clip_bg),
+                    );
+                }
+            }
+
+            // Fill gaps between clips with a subtle line.
+            for c in 0..bar_width {
+                let cx = bar_x + c as u16;
+                if cx < area.x + area.width {
+                    if let Some(cell) = buf.cell_mut((cx, row)) {
+                        if cell.symbol() == " " {
+                            buf.set_string(cx, row, "\u{2500}", Style::default().fg(t.separator));
+                        }
+                    }
+                }
+            }
+            row += 1;
+        }
+
+        // ── 2. Time scale bar ──────────────────────────────────────────────────
         if row < max_y {
-            let bar_x = area.x + name_and_sep as u16;
-            // Place timestamps at bar_width / 5 intervals (at least 1).
+            // Pad gutter.
+            buf.set_string(
+                area.x,
+                row,
+                &" ".repeat(name_and_sep.min(area.width as usize)),
+                Style::default(),
+            );
+
             let interval = if bar_width >= 5 { bar_width / 5 } else { 1 };
             let mut col = 0;
             while col < bar_width {
-                // Reverse-map this column back to an edit index.
                 let edit_idx = if total_edits == 0 {
                     0
                 } else if self.app.timeline_zoom <= 1.0 {
@@ -220,10 +330,8 @@ impl Widget for TimelineWidget<'_> {
                     "0:00".to_string()
                 };
 
-                // Write the label prefixed with a tick mark (┬), starting at this column,
-                // truncated to bar boundary.
                 let write_x = bar_x + col as u16;
-                let prefixed = format!("\u{252C}{}", label);
+                let prefixed = format!("\u{2502}{}", label);
                 for (i, ch) in prefixed.chars().enumerate() {
                     let cx = write_x + i as u16;
                     if cx < area.x + area.width {
@@ -236,8 +344,7 @@ impl Widget for TimelineWidget<'_> {
             row += 1;
         }
 
-        // ── 2. Track rows ──────────────────────────────────────────────────────
-        // Record which rows are track rows so we can overlay the playhead later.
+        // ── 3. Track rows ──────────────────────────────────────────────────────
         let track_row_start = row;
 
         for track in &tracks {
@@ -253,11 +360,10 @@ impl Widget for TimelineWidget<'_> {
                 let padded = format!("{:>width$}", format!("{}*", trimmed), width = TRACK_NAME_WIDTH);
                 (padded, t.fg_dim)
             } else if is_detached {
-                // Mark detached tracks with a subtle indicator.
                 let display = Self::display_name(&track.filename);
                 (display, color_detached_playhead)
             } else {
-                (Self::display_name(&track.filename), color_track_name)
+                (Self::display_name(&track.filename), t.fg)
             };
 
             // Determine active/flash state for background highlight.
@@ -276,14 +382,12 @@ impl Widget for TimelineWidget<'_> {
                 None
             };
 
-            // Build name span with optional background.
             let name_style = if let Some(bg) = row_bg {
                 Style::default().fg(name_color).bg(bg)
             } else {
                 Style::default().fg(name_color)
             };
 
-            // Build separator span with optional background.
             let sep_style = if let Some(bg) = row_bg {
                 Style::default().bg(bg)
             } else {
@@ -298,7 +402,7 @@ impl Widget for TimelineWidget<'_> {
                 Span::styled(SEPARATOR, sep_style),
             ];
 
-            // Build the bar as a Vec<(char, Color)> initialized to empty.
+            // Build the bar.
             let mut bar: Vec<(char, Color)> = vec![('\u{2500}', color_bar_empty); bar_width];
 
             if bar_width > 0 && total_edits > 0 {
@@ -336,7 +440,7 @@ impl Widget for TimelineWidget<'_> {
             row += 1;
         }
 
-        let track_row_end = row; // exclusive
+        let track_row_end = row;
 
         // ── Compute playhead column ────────────────────────────────────────────
         let playhead_col = if total_edits > 0 && bar_width > 0 {
@@ -346,49 +450,78 @@ impl Widget for TimelineWidget<'_> {
             0
         };
 
-        // Use accent_purple for the playhead if any file is detached.
         let ph_color = if self.app.detached_files.is_empty() {
             color_playhead
         } else {
             color_detached_playhead
         };
 
-        // ── 3. Full-height playhead overlay on track rows ──────────────────────
+        // ── 4. Full-height playhead overlay on track rows ──────────────────────
         {
-            let ph_x = area.x + name_and_sep as u16 + playhead_col as u16;
+            let ph_x = bar_x + playhead_col as u16;
             if ph_x < area.x + area.width {
                 for track_row in track_row_start..track_row_end {
                     buf.set_string(ph_x, track_row, "\u{2503}", Style::default().fg(ph_color));
                 }
             }
+
+            // Playhead indicator on the time scale row (row above track_row_start).
+            if track_row_start > area.y {
+                let scale_row = track_row_start - 1;
+                if ph_x < area.x + area.width {
+                    buf.set_string(ph_x, scale_row, "\u{25BC}", Style::default().fg(ph_color));
+                }
+            }
         }
 
-        // ── 4. Playhead row ────────────────────────────────────────────────────
+        // ── 5. Transport / scrub bar ───────────────────────────────────────────
         if row < max_y {
-            let mut ph_spans: Vec<Span> = vec![
-                Span::raw(format!("{:<width$}", "", width = TRACK_NAME_WIDTH)),
-                Span::raw(SEPARATOR),
-            ];
+            let mut transport_spans: Vec<Span> = Vec::new();
 
-            for cell in 0..bar_width {
-                let ch = if cell == playhead_col {
-                    "\u{2503}"
-                } else if cell >= playhead_col.saturating_sub(1) && cell <= playhead_col + 1 {
-                    "\u{2501}"
+            // Gutter: position counter.
+            let pos_label = if total_edits > 0 {
+                format!("{:>4}/{:<4} ", self.app.playhead + 1, total_edits)
+            } else {
+                format!("{:>width$}", "", width = name_and_sep)
+            };
+            let gutter_len = pos_label.len().min(name_and_sep);
+            transport_spans.push(Span::styled(
+                format!("{:>width$}", &pos_label[..gutter_len], width = name_and_sep),
+                Style::default().fg(t.fg_muted),
+            ));
+
+            // Build the scrub bar: filled before playhead, empty after.
+            let filled_char = '\u{2501}'; // heavy horizontal
+            let empty_char = '\u{2500}';  // light horizontal
+            let handle_char = "\u{25CF}"; // filled circle as handle
+
+            for c in 0..bar_width {
+                if c == playhead_col {
+                    transport_spans.push(Span::styled(
+                        handle_char,
+                        Style::default().fg(ph_color),
+                    ));
+                } else if c < playhead_col {
+                    transport_spans.push(Span::styled(
+                        filled_char.to_string(),
+                        Style::default().fg(ph_color),
+                    ));
                 } else {
-                    "\u{2500}"
-                };
-                ph_spans.push(Span::styled(ch, Style::default().fg(ph_color)));
+                    transport_spans.push(Span::styled(
+                        empty_char.to_string(),
+                        Style::default().fg(t.separator),
+                    ));
+                }
             }
 
-            // Append formatted timestamp of the current edit.
+            // Timestamp after the bar.
             if total_edits > 0 {
                 let ts_ms = self.app.edits[self.app.playhead.min(total_edits - 1)].ts;
                 let ts_label = format!(" {}", self.format_time(ts_ms));
-                ph_spans.push(Span::styled(ts_label, Style::default().fg(ph_color)));
+                transport_spans.push(Span::styled(ts_label, Style::default().fg(ph_color)));
             }
 
-            Line::from(ph_spans).render(
+            Line::from(transport_spans).render(
                 Rect {
                     x: area.x,
                     y: row,
@@ -400,9 +533,8 @@ impl Widget for TimelineWidget<'_> {
             row += 1;
         }
 
-        // ── 5. Agent legend (only when >1 unique agent) ────────────────────────
+        // ── 6. Agent legend (only when >1 unique agent) ────────────────────────
         if row < max_y {
-            // Collect unique (agent_label, color) pairs.
             let mut seen = std::collections::HashSet::new();
             let mut agents: Vec<(String, Color)> = Vec::new();
             for edit in &self.app.edits {
@@ -456,5 +588,21 @@ fn change_tint(color: Color) -> Color {
             ((b as u16) * 40 / 255) as u8,
         ),
         _ => Color::Rgb(10, 8, 6),
+    }
+}
+
+/// Produce a dimmed version of an RGB color for clip backgrounds.
+fn dim_color(color: Color, brightness: u16) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            ((r as u16) * brightness / 255) as u8,
+            ((g as u16) * brightness / 255) as u8,
+            ((b as u16) * brightness / 255) as u8,
+        ),
+        _ => Color::Rgb(
+            (brightness / 4) as u8,
+            (brightness / 4) as u8,
+            (brightness / 5) as u8,
+        ),
     }
 }

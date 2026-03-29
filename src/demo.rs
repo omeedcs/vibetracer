@@ -109,6 +109,9 @@ pub fn run_demo(project_path: PathBuf, config: Config) -> anyhow::Result<()> {
         app.alert_evaluator = AlertEvaluator::new(config.alerts.clone());
     }
 
+    // ── Pre-populate synthetic file contents for preview ────────────────────
+    populate_synthetic_content(&mut app);
+
     // ── Show welcome toast ───────────────────────────────────────────────────
     app.show_toast(
         "demo mode -- explore with arrows, t/i/:/? for modes".to_string(),
@@ -398,4 +401,769 @@ fn generate_conversation_turns(session_start_ms: i64) -> Vec<ConversationTurn> {
             duration_ms: 90_000,
         },
     ]
+}
+
+/// Map each edit's after_hash to realistic file content so the preview pane
+/// can display actual code in demo mode (no snapshot store on disk).
+fn populate_synthetic_content(app: &mut App) {
+    // Build a lookup: for each file, collect the after_hashes in order.
+    // We generate progressive versions of the code so scrubbing through
+    // shows the file evolving.
+    let mut file_hashes: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for edit in &app.edits {
+        file_hashes
+            .entry(edit.file.clone())
+            .or_default()
+            .push(edit.after_hash.clone());
+    }
+
+    // For each file, generate content versions and map hashes.
+    for (file, hashes) in &file_hashes {
+        let versions = generate_file_versions(file, hashes.len());
+        for (hash, content) in hashes.iter().zip(versions.into_iter()) {
+            app.synthetic_content.insert(hash.clone(), content);
+        }
+    }
+}
+
+/// Generate progressive versions of a file's content. Returns one String
+/// per version (one per edit to that file).
+fn generate_file_versions(filename: &str, count: usize) -> Vec<String> {
+    match filename {
+        "src/auth.rs" => gen_auth_versions(count),
+        "src/middleware.rs" => gen_middleware_versions(count),
+        "src/config.rs" => gen_config_versions(count),
+        "src/api/login.rs" => gen_login_versions(count),
+        "tests/auth_test.rs" => gen_test_versions(count),
+        "src/api/refresh.rs" => gen_refresh_versions(count),
+        "src/session.rs" => gen_session_versions(count),
+        "README.md" => gen_readme_versions(count),
+        "Cargo.toml" => gen_cargo_versions(count),
+        "src/main.rs" => gen_main_versions(count),
+        _ => vec!["// unknown file\n".to_string(); count],
+    }
+}
+
+fn gen_auth_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use std::collections::HashMap;
+use std::time::Duration;
+use serde::{Serialize, Deserialize};
+
+pub struct AuthConfig {
+    pub session_ttl: u64,
+    pub max_retries: u32,
+}
+
+/// Validate a session token against the in-memory store.
+pub fn validate_session(token: &str) -> Result<User, AuthError> {
+    let session = SESSION_STORE.get(token)?;
+    if session.is_expired() {
+        return Err(AuthError::Expired);
+    }
+    Ok(session.user.clone())
+}
+
+/// Create a new session for a user and return the token.
+pub fn create_session(user: &User) -> String {
+    let token = generate_random_token();
+    SESSION_STORE.insert(token.clone(), Session::new(user));
+    token
+}
+
+#[derive(Debug, Clone)]
+pub struct User {
+    pub id: u64,
+    pub username: String,
+    pub role: String,
+}
+
+#[derive(Debug)]
+pub enum AuthError {
+    Expired,
+    InvalidToken,
+    NotAuthenticated,
+    Internal(String),
+}
+"#;
+
+    let v2 = r#"use std::collections::HashMap;
+use std::time::Duration;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::errors::ErrorKind;
+use serde::{Serialize, Deserialize};
+
+pub struct AuthConfig {
+    pub session_ttl: u64,
+    pub max_retries: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,
+    pub exp: usize,
+    pub iat: usize,
+    pub role: String,
+}
+
+/// Validate a JWT token and extract claims.
+pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims, AuthError> {
+    let key = DecodingKey::from_secret(secret);
+    let validation = Validation::new(Algorithm::HS256);
+    let token_data = decode::<Claims>(token, &key, &validation)
+        .map_err(|e| match e.kind() {
+            ErrorKind::ExpiredSignature => AuthError::Expired,
+            ErrorKind::InvalidToken => AuthError::InvalidToken,
+            _ => AuthError::Internal(e.to_string()),
+        })?;
+    Ok(token_data.claims)
+}
+
+/// Create a new JWT for a user.
+pub fn create_jwt(user: &User, secret: &[u8]) -> Result<String, AuthError> {
+    let now = chrono::Utc::now();
+    let claims = Claims {
+        sub: user.id.to_string(),
+        exp: (now + chrono::Duration::hours(24)).timestamp() as usize,
+        iat: now.timestamp() as usize,
+        role: user.role.to_string(),
+    };
+    let key = EncodingKey::from_secret(secret);
+    encode(&Header::default(), &claims, &key)
+        .map_err(|e| AuthError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone)]
+pub struct User {
+    pub id: u64,
+    pub username: String,
+    pub role: String,
+}
+
+#[derive(Debug)]
+pub enum AuthError {
+    Expired,
+    InvalidToken,
+    MissingToken,
+    InvalidFormat,
+    NotAuthenticated,
+    Internal(String),
+}
+"#;
+
+    let v3 = r#"use std::collections::HashMap;
+use std::time::Duration;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::errors::ErrorKind;
+use serde::{Serialize, Deserialize};
+
+pub struct AuthConfig {
+    pub session_ttl: u64,
+    pub max_retries: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,
+    pub exp: usize,
+    pub iat: usize,
+    pub role: String,
+}
+
+/// Validate a JWT token and extract claims.
+pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims, AuthError> {
+    let key = DecodingKey::from_secret(secret);
+    let validation = Validation::new(Algorithm::HS256);
+    let token_data = decode::<Claims>(token, &key, &validation)
+        .map_err(|e| match e.kind() {
+            ErrorKind::ExpiredSignature => AuthError::Expired,
+            ErrorKind::InvalidToken => AuthError::InvalidToken,
+            _ => AuthError::Internal(e.to_string()),
+        })?;
+    Ok(token_data.claims)
+}
+
+/// Create a new JWT for a user.
+pub fn create_jwt(user: &User, secret: &[u8]) -> Result<String, AuthError> {
+    let now = chrono::Utc::now();
+    let claims = Claims {
+        sub: user.id.to_string(),
+        exp: (now + chrono::Duration::hours(24)).timestamp() as usize,
+        iat: now.timestamp() as usize,
+        role: user.role.to_string(),
+    };
+    let key = EncodingKey::from_secret(secret);
+    encode(&Header::default(), &claims, &key)
+        .map_err(|e| AuthError::Internal(e.to_string()))
+}
+
+/// Create a refresh token with a longer TTL.
+pub fn create_refresh_token(user: &User, secret: &[u8]) -> Result<String, AuthError> {
+    let now = chrono::Utc::now();
+    let claims = Claims {
+        sub: user.id.to_string(),
+        exp: (now + chrono::Duration::days(7)).timestamp() as usize,
+        iat: now.timestamp() as usize,
+        role: user.role.to_string(),
+    };
+    let key = EncodingKey::from_secret(secret);
+    encode(&Header::default(), &claims, &key)
+        .map_err(|e| AuthError::Internal(e.to_string()))
+}
+
+#[derive(Debug, Clone)]
+pub struct User {
+    pub id: u64,
+    pub username: String,
+    pub role: String,
+}
+
+#[derive(Debug)]
+pub enum AuthError {
+    Expired,
+    InvalidToken,
+    MissingToken,
+    InvalidFormat,
+    NotAuthenticated,
+    Internal(String),
+}
+"#;
+
+    interpolate_versions(&[v1, v2, v3], count)
+}
+
+fn gen_middleware_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use std::collections::HashMap;
+use crate::auth::{validate_session, AuthError};
+
+/// Authentication middleware: validates session tokens on each request.
+pub fn auth_middleware(req: &Request) -> Result<(), AuthError> {
+    let token = req.header("Authorization");
+    // TODO: migrate to JWT validation
+    // Current: session token lookup
+    validate_session(token)
+}
+"#;
+
+    let v2 = r#"use std::collections::HashMap;
+use crate::auth::{validate_jwt, Claims, AuthError};
+
+/// Authentication middleware: validates JWT on each request.
+pub fn auth_middleware(req: &Request) -> Result<(), AuthError> {
+    let auth_header = req.header("Authorization")
+        .ok_or(AuthError::MissingToken)?;
+    let token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or(AuthError::InvalidFormat)?;
+    let secret = req.state().config.jwt_secret.as_bytes();
+    let claims = validate_jwt(token, secret)?;
+    req.set_extension(claims);
+    Ok(())
+}
+
+/// Extract claims from a previously-authenticated request.
+pub fn extract_claims(req: &Request) -> Result<&Claims, AuthError> {
+    req.extensions()
+        .get::<Claims>()
+        .ok_or(AuthError::NotAuthenticated)
+}
+"#;
+
+    let v3 = r#"use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use std::time::Duration;
+use crate::auth::{validate_jwt, Claims, AuthError};
+
+/// Authentication middleware: validates JWT on each request.
+pub fn auth_middleware(req: &Request) -> Result<(), AuthError> {
+    let auth_header = req.header("Authorization")
+        .ok_or(AuthError::MissingToken)?;
+    let token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or(AuthError::InvalidFormat)?;
+    let secret = req.state().config.jwt_secret.as_bytes();
+    let claims = validate_jwt(token, secret)?;
+    req.set_extension(claims);
+    Ok(())
+}
+
+/// Extract claims from a previously-authenticated request.
+pub fn extract_claims(req: &Request) -> Result<&Claims, AuthError> {
+    req.extensions()
+        .get::<Claims>()
+        .ok_or(AuthError::NotAuthenticated)
+}
+
+pub struct RateLimiter {
+    limits: Arc<RwLock<HashMap<String, (u64, std::time::Instant)>>>,
+    max_requests: u64,
+    window: Duration,
+}
+
+impl RateLimiter {
+    pub fn new(max_requests: u64, window: Duration) -> Self {
+        Self {
+            limits: Arc::new(RwLock::new(HashMap::new())),
+            max_requests,
+            window,
+        }
+    }
+
+    pub async fn check(&self, ip: &str) -> Result<(), AuthError> {
+        let mut limits = self.limits.write().await;
+        let now = std::time::Instant::now();
+
+        let entry = limits.entry(ip.to_string()).or_insert((0, now));
+        if now.duration_since(entry.1) > self.window {
+            *entry = (1, now);
+            return Ok(());
+        }
+
+        entry.0 += 1;
+        if entry.0 > self.max_requests {
+            return Err(AuthError::Internal("rate limited".into()));
+        }
+        Ok(())
+    }
+}
+"#;
+
+    interpolate_versions(&[v1, v2, v3], count)
+}
+
+fn gen_config_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub db_url: String,
+    pub jwt_secret: Option<String>,
+    pub jwt_expiry_secs: u64,
+    pub host: String,
+    pub port: u16,
+    pub log_level: String,
+}
+
+pub fn get_config() -> &'static Config {
+    CONFIG.get().expect("config not initialized")
+}
+
+static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
+"#;
+
+    let v2 = r#"use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub db_url: String,
+    pub jwt_secret: String,
+    pub jwt_refresh_secret: String,
+    pub jwt_expiry_secs: u64,
+    pub jwt_refresh_expiry_secs: u64,
+    pub host: String,
+    pub port: u16,
+    pub log_level: String,
+}
+
+pub fn get_config() -> &'static Config {
+    CONFIG.get().expect("config not initialized")
+}
+
+static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
+"#;
+
+    let v3 = r#"use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub db_url: String,
+    pub jwt_secret: String,
+    pub jwt_refresh_secret: String,
+    pub jwt_expiry_secs: u64,
+    pub jwt_refresh_expiry_secs: u64,
+    pub rate_limit_requests: u64,
+    pub rate_limit_window_secs: u64,
+    pub rate_limit_burst: u64,
+    pub rate_limit_enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub log_level: String,
+}
+
+pub const MAX_RETRIES: u32 = 5;
+
+pub fn get_config() -> &'static Config {
+    CONFIG.get().expect("config not initialized")
+}
+
+static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
+"#;
+
+    interpolate_versions(&[v1, v2, v3], count)
+}
+
+fn gen_login_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use crate::auth::{create_jwt, create_refresh_token, AuthError};
+use crate::config::get_config;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LoginResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: u64,
+}
+
+pub async fn login(req: LoginRequest) -> Result<LoginResponse, ApiError> {
+    let user = authenticate(&req.username, &req.password).await?;
+    let config = get_config();
+    let access_token = create_jwt(&user, config.jwt_secret.as_bytes())?;
+    let refresh_token = create_refresh_token(&user, config.jwt_refresh_secret.as_bytes())?;
+    Ok(LoginResponse {
+        access_token,
+        refresh_token,
+        expires_in: config.jwt_expiry_secs,
+    })
+}
+"#;
+
+    let v2 = r#"use crate::auth::{create_jwt, create_refresh_token, AuthError};
+use crate::config::get_config;
+use crate::middleware::RateLimiter;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LoginResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: u64,
+}
+
+pub async fn login(req: LoginRequest) -> Result<LoginResponse, ApiError> {
+    let user = authenticate(&req.username, &req.password).await?;
+    let config = get_config();
+    let access_token = create_jwt(&user, config.jwt_secret.as_bytes())?;
+    let refresh_token = create_refresh_token(&user, config.jwt_refresh_secret.as_bytes())?;
+    Ok(LoginResponse {
+        access_token,
+        refresh_token,
+        expires_in: config.jwt_expiry_secs,
+    })
+}
+
+pub async fn rate_limited_login(req: LoginRequest, limiter: &RateLimiter) -> Result<LoginResponse, ApiError> {
+    let ip = req.remote_addr();
+    limiter.check(ip).await.map_err(|_| ApiError::RateLimited)?;
+    login(req).await
+}
+"#;
+
+    interpolate_versions(&[v1, v2], count)
+}
+
+fn gen_test_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use crate::auth::{validate_jwt, create_jwt, Claims};
+
+fn create_test_user() -> crate::auth::User {
+    crate::auth::User {
+        id: 42,
+        username: "testuser".to_string(),
+        role: "admin".to_string(),
+    }
+}
+
+#[test]
+fn test_jwt_validation() {
+    let secret = b"test-secret-key";
+    let user = create_test_user();
+    let token = create_jwt(&user, secret).unwrap();
+    let claims = validate_jwt(&token, secret).unwrap();
+    assert_eq!(claims.sub, user.id.to_string());
+    assert_eq!(claims.role, "admin");
+}
+
+#[test]
+fn test_jwt_expiry() {
+    let secret = b"test-secret-key";
+    let expired_token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &Claims {
+            sub: "42".to_string(),
+            exp: 0,
+            iat: 0,
+            role: "user".to_string(),
+        },
+        &jsonwebtoken::EncodingKey::from_secret(secret),
+    )
+    .unwrap();
+    let result = validate_jwt(&expired_token, secret);
+    assert!(result.is_err());
+}
+"#;
+
+    let v2 = r#"use crate::auth::{validate_jwt, create_jwt, create_refresh_token, Claims};
+
+fn create_test_user() -> crate::auth::User {
+    crate::auth::User {
+        id: 42,
+        username: "testuser".to_string(),
+        role: "admin".to_string(),
+    }
+}
+
+#[test]
+fn test_jwt_validation() {
+    let secret = b"test-secret-key";
+    let user = create_test_user();
+    let token = create_jwt(&user, secret).unwrap();
+    let claims = validate_jwt(&token, secret).unwrap();
+    assert_eq!(claims.sub, user.id.to_string());
+    assert_eq!(claims.role, "admin");
+}
+
+#[test]
+fn test_jwt_expiry() {
+    let secret = b"test-secret-key";
+    let expired_token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &Claims {
+            sub: "42".to_string(),
+            exp: 0,
+            iat: 0,
+            role: "user".to_string(),
+        },
+        &jsonwebtoken::EncodingKey::from_secret(secret),
+    )
+    .unwrap();
+    let result = validate_jwt(&expired_token, secret);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_wrong_secret() {
+    let user = create_test_user();
+    let token = create_jwt(&user, b"secret-1").unwrap();
+    let result = validate_jwt(&token, b"secret-2");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_refresh_token_creation() {
+    let secret = b"refresh-secret";
+    let user = create_test_user();
+    let token = create_refresh_token(&user, secret).unwrap();
+    let claims = validate_jwt(&token, secret).unwrap();
+    assert_eq!(claims.sub, "42");
+}
+
+#[test]
+fn test_claims_role_preserved() {
+    let secret = b"test-secret";
+    let user = create_test_user();
+    let token = create_jwt(&user, secret).unwrap();
+    let claims = validate_jwt(&token, secret).unwrap();
+    assert_eq!(claims.role, user.role);
+}
+
+#[test]
+fn test_multiple_users() {
+    let secret = b"test-secret";
+    let user_a = crate::auth::User { id: 1, username: "alice".into(), role: "admin".into() };
+    let user_b = crate::auth::User { id: 2, username: "bob".into(), role: "viewer".into() };
+    let token_a = create_jwt(&user_a, secret).unwrap();
+    let token_b = create_jwt(&user_b, secret).unwrap();
+    assert_ne!(token_a, token_b);
+    assert_eq!(validate_jwt(&token_a, secret).unwrap().role, "admin");
+    assert_eq!(validate_jwt(&token_b, secret).unwrap().role, "viewer");
+}
+"#;
+
+    interpolate_versions(&[v1, v2], count)
+}
+
+fn gen_refresh_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use crate::auth::{validate_jwt, create_jwt, create_refresh_token};
+use crate::config::get_config;
+
+pub async fn refresh(req: RefreshRequest) -> Result<TokenResponse, ApiError> {
+    let config = get_config();
+    let claims = validate_jwt(&req.refresh_token, config.jwt_refresh_secret.as_bytes())
+        .map_err(|_| ApiError::InvalidRefreshToken)?;
+    let user = get_user_by_id(&claims.sub).await?;
+    let access_token = create_jwt(&user, config.jwt_secret.as_bytes())?;
+    let refresh_token = create_refresh_token(&user, config.jwt_refresh_secret.as_bytes())?;
+    Ok(TokenResponse {
+        access_token,
+        refresh_token,
+        expires_in: config.jwt_expiry_secs,
+    })
+}
+"#;
+
+    let v2 = r#"use crate::auth::{validate_jwt, create_jwt, create_refresh_token};
+use crate::session::{get_token_ttl, TokenType};
+use crate::blocklist::add_to_blocklist;
+use crate::config::get_config;
+
+pub async fn refresh(req: RefreshRequest) -> Result<TokenResponse, ApiError> {
+    let config = get_config();
+    let claims = validate_jwt(&req.refresh_token, config.jwt_refresh_secret.as_bytes())
+        .map_err(|_| ApiError::InvalidRefreshToken)?;
+    let user = get_user_by_id(&claims.sub).await?;
+    let access_token = create_jwt(&user, config.jwt_secret.as_bytes())?;
+    let refresh_token = create_refresh_token(&user, config.jwt_refresh_secret.as_bytes())?;
+    Ok(TokenResponse {
+        access_token,
+        refresh_token,
+        expires_in: config.jwt_expiry_secs,
+    })
+}
+
+pub async fn revoke(req: RevokeRequest) -> Result<(), ApiError> {
+    let config = get_config();
+    add_to_blocklist(&req.token, get_token_ttl(TokenType::Refresh)).await?;
+    Ok(())
+}
+"#;
+
+    interpolate_versions(&[v1, v2], count)
+}
+
+fn gen_session_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use std::time::Duration;
+
+pub enum TokenType {
+    Access,
+    Refresh,
+}
+
+pub fn get_token_ttl(token_type: TokenType) -> Duration {
+    match token_type {
+        TokenType::Access => Duration::from_secs(900),     // 15 minutes
+        TokenType::Refresh => Duration::from_secs(604800), // 7 days
+    }
+}
+"#;
+
+    interpolate_versions(&[v1], count)
+}
+
+fn gen_readme_versions(count: usize) -> Vec<String> {
+    let v1 = r#"# Auth Service
+
+A lightweight authentication service built with Rust.
+
+## Authentication
+
+This project uses JWT-based authentication with refresh tokens.
+
+- Access tokens expire after 15 minutes
+- Refresh tokens expire after 7 days
+- Rate limiting: 100 requests per minute per IP
+
+### Token Flow
+
+1. POST /login -> { access_token, refresh_token }
+2. Use access_token in Authorization: Bearer header
+3. POST /refresh when access_token expires
+
+## Getting Started
+
+```bash
+cargo run --release
+```
+
+## Configuration
+
+Set environment variables or use `config.toml`:
+
+```toml
+jwt_secret = "your-secret-key"
+jwt_refresh_secret = "your-refresh-secret"
+jwt_expiry_secs = 900
+jwt_refresh_expiry_secs = 604800
+rate_limit_requests = 100
+rate_limit_window_secs = 60
+```
+"#;
+
+    interpolate_versions(&[v1], count)
+}
+
+fn gen_cargo_versions(count: usize) -> Vec<String> {
+    let v1 = r#"[package]
+name = "auth-service"
+version = "0.5.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jsonwebtoken = "9"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+"#;
+
+    interpolate_versions(&[v1], count)
+}
+
+fn gen_main_versions(count: usize) -> Vec<String> {
+    let v1 = r#"use auth::validate_jwt;
+use middleware::RateLimiter;
+use config::Config;
+
+mod auth;
+mod config;
+mod middleware;
+mod session;
+
+fn main() {
+    tracing_subscriber::init();
+    let config = Config::from_env().expect("failed to load config");
+    let limiter = RateLimiter::new(
+        config.rate_limit_requests,
+        std::time::Duration::from_secs(config.rate_limit_window_secs),
+    );
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        tracing::info!("starting auth-service on {}:{}", config.host, config.port);
+        serve(config, limiter).await
+    });
+}
+"#;
+
+    interpolate_versions(&[v1], count)
+}
+
+/// Given a set of version snapshots and a target count, distribute versions
+/// evenly across the edits. Early edits get earlier versions, later edits
+/// get later versions.
+fn interpolate_versions(versions: &[&str], count: usize) -> Vec<String> {
+    if count == 0 {
+        return Vec::new();
+    }
+    if versions.len() == 1 || count == 1 {
+        return vec![versions.last().unwrap_or(&"").to_string(); count];
+    }
+    let mut result = Vec::with_capacity(count);
+    for i in 0..count {
+        // Map edit index to a version index.
+        let vi = i * (versions.len() - 1) / (count - 1).max(1);
+        result.push(versions[vi.min(versions.len() - 1)].to_string());
+    }
+    result
 }

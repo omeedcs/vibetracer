@@ -36,11 +36,11 @@ pub fn compute_layout(
     conversation_visible: bool,
 ) -> AppLayout {
     let timeline_height = if area.height < 15 {
-        4
+        5
     } else if area.height < 25 {
-        6
-    } else {
         8
+    } else {
+        11
     };
 
     let vertical = Layout::default()

@@ -1,6 +1,6 @@
 [package]
 name = "vibetracer"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits. MCP server for AI self-correction. Cross-agent support (Claude Code, Cursor, Codex). Export to Agent Trace JSON and git-ai git notes."
 keywords = ["tracing", "ai", "mcp", "debugging", "tui"]

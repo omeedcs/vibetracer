@@ -214,6 +214,11 @@ pub struct App {
     pub session_diff: Option<SessionDiff>,
     /// Selected file index within the session diff overlay.
     pub session_diff_selected: usize,
+
+    // ── demo / synthetic content ────────────────────────────────────────────
+    /// Synthetic file contents keyed by after_hash, used in demo mode to
+    /// provide preview content without a real snapshot store.
+    pub synthetic_content: HashMap<String, String>,
 }
 
 impl App {
@@ -291,6 +296,8 @@ impl App {
 
             session_diff: None,
             session_diff_selected: 0,
+
+            synthetic_content: HashMap::new(),
         }
     }
 
@@ -384,6 +391,12 @@ impl App {
             if *cached_hash == hash {
                 return Some((cached_content.clone(), filename));
             }
+        }
+
+        // Check synthetic content first (demo mode).
+        if let Some(content) = self.synthetic_content.get(&hash) {
+            self.cached_content = Some((hash, content.clone()));
+            return Some((content.clone(), filename));
         }
 
         // Retrieve from the snapshot store.
